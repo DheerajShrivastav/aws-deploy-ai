@@ -1,22 +1,70 @@
 {
-  "name": "mcp-server",
+  "name": "aws-deploy-ai-mcp-server",
   "version": "1.0.0",
-  "description": "",
-  "main": "index.js",
+  "description": "AI-powered AWS deployment platform MCP server that orchestrates cloud infrastructure through natural language prompts",
+  "main": "dist/main.js",
   "scripts": {
     "build": "tsc",
     "start": "node dist/main.js",
-    "dev": "tsx main.ts",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "dev": "tsx src/main.ts",
+    "test": "jest",
+    "test:watch": "jest --watch",
+    "lint": "eslint src/**/*.ts",
+    "format": "prettier --write src/**/*.ts",
+    "clean": "rm -rf dist"
   },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
+  "keywords": [
+    "aws",
+    "deployment",
+    "ai",
+    "mcp",
+    "cloud",
+    "infrastructure",
+    "automation"
+  ],
+  "author": "aws-deploy-ai team",
+  "license": "MIT",
   "dependencies": {
+    "@aws-sdk/client-acm": "^3.600.0",
+    "@aws-sdk/client-api-gateway": "^3.600.0",
+    "@aws-sdk/client-bedrock-runtime": "^3.891.0",
+    "@aws-sdk/client-cloudfront": "^3.600.0",
+    "@aws-sdk/client-cloudwatch": "^3.600.0",
+    "@aws-sdk/client-ecs": "^3.600.0",
+    "@aws-sdk/client-iam": "^3.600.0",
+    "@aws-sdk/client-lambda": "^3.600.0",
+    "@aws-sdk/client-route-53": "^3.600.0",
+    "@aws-sdk/client-s3": "^3.600.0",
+    "@aws-sdk/client-sfn": "^3.600.0",
     "@modelcontextprotocol/sdk": "^1.18.1",
-    "zod": "^3.25.76"
+    "archiver": "^6.0.1",
+    "dotenv": "^16.3.1",
+    "mime-types": "^2.1.35",
+    "uuid": "^10.0.0",
+    "winston": "^3.11.0",
+    "yaml": "^2.3.4",
+    "zod": "^3.25.76",
+    "@octokit/rest": "^20.0.2",
+    "simple-git": "^3.20.0",
+    "node-fetch": "^3.3.2"
   },
   "devDependencies": {
-    "tsx": "^4.20.5"
+    "@types/archiver": "^6.0.2",
+    "@types/jest": "^29.5.5",
+    "@types/mime-types": "^2.1.4",
+    "@types/node": "^20.8.0",
+    "@types/uuid": "^9.0.5",
+    "@types/node-fetch": "^2.6.7",
+    "@typescript-eslint/eslint-plugin": "^6.7.4",
+    "@typescript-eslint/parser": "^6.7.4",
+    "eslint": "^8.50.0",
+    "jest": "^29.7.0",
+    "prettier": "^3.0.3",
+    "ts-jest": "^29.1.1",
+    "tsx": "^4.20.5",
+    "typescript": "^5.2.2"
+  },
+  "engines": {
+    "node": ">=18.0.0"
   }
 }
