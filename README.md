@@ -1,11 +1,31 @@
-# AWS Deploy AI - AI-Powered AWS Deployment Platform
+# AWS Deploy AI - AI-Powered AWS Deployment Platform (Monorepo)
 
 <div align="center">
   <img src="https://img.shields.io/badge/AWS-Deploy%20AI-blue?style=for-the-badge&logo=amazon-aws" alt="AWS Deploy AI">
   <img src="https://img.shields.io/badge/TypeScript-007ACC?style=for-the-badge&logo=typescript&logoColor=white" alt="TypeScript">
   <img src="https://img.shields.io/badge/Next.js-000000?style=for-the-badge&logo=nextdotjs&logoColor=white" alt="Next.js">
   <img src="https://img.shields.io/badge/AWS_Bedrock-FF9900?style=for-the-badge&logo=amazon-aws&logoColor=white" alt="AWS Bedrock">
+  <img src="https://img.shields.io/badge/Monorepo-Workspace-green?style=for-the-badge" alt="Monorepo">
 </div>
+
+## 🏗️ Monorepo Architecture
+
+This monorepo contains two main packages:
+
+- **@aws-deploy-ai/mcp-server**: Model Context Protocol server with AWS Bedrock integration
+- **@aws-deploy-ai/frontend**: Next.js web interface for the deployment platform
+
+## 🚀 Quick Start
+
+```bash
+# Install all dependencies and build MCP server
+npm run install-all
+
+# Start development environment (both packages)
+npm run dev
+
+# Access the web interface at http://localhost:3000
+```
 
 <div align="center">
   <h3>🚀 Deploy websites and applications to AWS using simple, natural language prompts</h3>

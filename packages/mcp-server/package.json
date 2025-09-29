@@ -1,5 +1,5 @@
 {
-  "name": "aws-deploy-ai-mcp-server",
+  "name": "@aws-deploy-ai/mcp-server",
   "version": "1.0.0",
   "description": "AI-powered AWS deployment platform MCP server that orchestrates cloud infrastructure through natural language prompts",
   "main": "dist/main.js",

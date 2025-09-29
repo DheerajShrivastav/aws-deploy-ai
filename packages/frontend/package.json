@@ -1,13 +1,12 @@
 {
-  "name": "frontend",
+  "name": "@aws-deploy-ai/frontend",
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "npm run copy-mcp && next dev --turbopack",
-    "build": "npm run copy-mcp && next build",
+    "dev": "next dev --turbopack",
+    "build": "next build",
     "start": "next start",
-    "lint": "eslint",
-    "copy-mcp": "chmod +x copy-mcp-server.sh && ./copy-mcp-server.sh"
+    "lint": "eslint"
   },
   "dependencies": {
     "react": "19.1.0",

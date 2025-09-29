@@ -1,0 +1,35 @@
+{
+  "name": "aws-deploy-ai",
+  "version": "1.0.0",
+  "description": "AI-powered deployment platform for GitHub repositories to AWS infrastructure",
+  "private": true,
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "build": "npm run build:mcp && npm run build:frontend",
+    "build:mcp": "cd packages/mcp-server && npm run build",
+    "build:frontend": "cd packages/frontend && npm run build",
+    "dev": "npm run dev:mcp & npm run dev:frontend",
+    "dev:mcp": "cd packages/mcp-server && npm run build && npm run start",
+    "dev:frontend": "cd packages/frontend && npm run dev",
+    "start": "npm run start:frontend",
+    "start:frontend": "cd packages/frontend && npm run start",
+    "clean": "rm -rf packages/*/node_modules packages/*/dist packages/*/.next",
+    "install-all": "npm install && npm run build:mcp"
+  },
+  "keywords": [
+    "aws",
+    "deployment",
+    "ai",
+    "github",
+    "mcp",
+    "next.js"
+  ],
+  "author": "Dheeraj Shrivastav",
+  "license": "MIT",
+  "devDependencies": {
+    "typescript": "^5.0.0",
+    "concurrently": "^8.2.0"
+  }
+}
