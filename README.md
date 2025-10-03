@@ -17,6 +17,25 @@ This monorepo contains two main packages:
 
 ## 🚀 Quick Start
 
+### 1. Environment Setup
+
+```bash
+# Copy environment variables
+cd packages/frontend
+cp .env.local.example .env.local
+```
+
+### 2. GitHub OAuth Setup
+
+1. Go to [GitHub Settings > Developer Settings > OAuth Apps](https://github.com/settings/applications/new)
+2. Create a new OAuth App with:
+   - **Application name**: AWS Deploy AI
+   - **Homepage URL**: `http://localhost:3000`
+   - **Authorization callback URL**: `http://localhost:3000/api/auth/github/callback`
+3. Copy the Client ID and Client Secret to your `.env.local` file
+
+### 3. Start Development
+
 ```bash
 # Install all dependencies and build MCP server
 npm run install-all
@@ -26,6 +45,12 @@ npm run dev
 
 # Access the web interface at http://localhost:3000
 ```
+
+### 4. Connect GitHub
+
+1. Click "Connect GitHub" on the main page
+2. Authorize the application
+3. Your repositories will be automatically loaded
 
 <div align="center">
   <h3>🚀 Deploy websites and applications to AWS using simple, natural language prompts</h3>

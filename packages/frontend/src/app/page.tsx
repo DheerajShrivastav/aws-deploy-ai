@@ -10,18 +10,69 @@ import {
   ChevronRight,
   Clock,
   CheckCircle,
+  Brain,
+  Key,
 } from 'lucide-react'
 import mcpClient, {
-  type Repository,
   type DeploymentResult,
   type RepositoryAnalysis,
 } from '../lib/mcp-client'
 import GitHubRepoCard from '../components/GitHubRepoCard'
 import DeploymentStatus from '../components/DeploymentStatus'
+import AWSCredentialsManager from '../components/AWSCredentialsManager'
+import DeploymentPlanPreview from '../components/DeploymentPlanPreview'
+
+interface AWSCredentials {
+  accessKeyId: string
+  secretAccessKey: string
+  region: string
+}
+
+interface DeploymentPlan {
+  architecture: string
+  services: {
+    name: string
+    type: string
+    purpose: string
+    estimated_cost: string
+  }[]
+  steps: {
+    step: number
+    action: string
+    description: string
+    resources: string[]
+  }[]
+  estimated_monthly_cost: string
+  deployment_time: string
+  requirements: string[]
+  recommendations: string[]
+}
+
+interface GitHubRepository {
+  id: number
+  name: string
+  fullName: string
+  description: string
+  language: string
+  stars: number
+  forks: number
+  owner: string
+  htmlUrl: string
+  cloneUrl: string
+  isPrivate: boolean
+  updatedAt: string
+  defaultBranch: string
+}
 
 export default function Home() {
   const [currentStep, setCurrentStep] = useState(1)
   const [githubConnected, setGithubConnected] = useState(false)
+  const [githubUser, setGithubUser] = useState<{
+    login: string
+    name: string
+    avatar_url: string
+    public_repos: number
+  } | null>(null)
   const [selectedRepo, setSelectedRepo] = useState('')
   const [deploymentPrompt, setDeploymentPrompt] = useState('')
   const [isDeploying, setIsDeploying] = useState(false)
@@ -30,7 +81,7 @@ export default function Home() {
   >('idle')
 
   // Real data from MCP
-  const [repositories, setRepositories] = useState<Repository[]>([])
+  const [repositories, setRepositories] = useState<GitHubRepository[]>([])
   const [isLoadingRepos, setIsLoadingRepos] = useState(false)
   const [repoAnalysis, setRepoAnalysis] = useState<RepositoryAnalysis | null>(
     null
@@ -39,75 +90,107 @@ export default function Home() {
     useState<DeploymentResult | null>(null)
   const [mcpConnected, setMcpConnected] = useState(false)
 
-  // Check MCP connection on mount
+  // New AI-powered deployment states
+  const [userPrompt, setUserPrompt] = useState('')
+  const [loading, setLoading] = useState(false)
+  const [awsCredentials, setAwsCredentials] = useState<AWSCredentials | null>(
+    null
+  )
+  const [deploymentPlan, setDeploymentPlan] = useState<DeploymentPlan | null>(
+    null
+  )
+  const [showCredentialsManager, setShowCredentialsManager] = useState(false)
+  const [showPlanPreview, setShowPlanPreview] = useState(false)
+  const [deploymentStep, setDeploymentStep] = useState<
+    'select' | 'credentials' | 'analyze' | 'plan' | 'deploy' | 'complete'
+  >('select')
+
+  // Check MCP connection and GitHub auth on mount
   useEffect(() => {
     checkMCPConnection()
+    checkGitHubAuth()
+
+    // Check for GitHub OAuth callback success
+    const urlParams = new URLSearchParams(window.location.search)
+    if (urlParams.get('github_connected') === 'true') {
+      // Remove the parameter from URL
+      window.history.replaceState({}, document.title, window.location.pathname)
+      // Show success message or trigger reload
+      setTimeout(() => {
+        checkGitHubAuth()
+      }, 100)
+    }
   }, [])
 
   async function checkMCPConnection() {
     try {
       const response = await fetch('/api/mcp')
       const data = await response.json()
-      setMcpConnected(data.mcpConnected || false)
+      setMcpConnected(data.status === 'healthy')
     } catch (error) {
       console.error('Failed to check MCP connection:', error)
       setMcpConnected(false)
     }
   }
 
-  const handleGithubConnect = async () => {
+  async function checkGitHubAuth() {
+    try {
+      const response = await fetch('/api/auth/github?action=status')
+      const data = await response.json()
+      if (data.authenticated) {
+        setGithubConnected(true)
+        setGithubUser(data.user)
+        // Auto-load repositories if already authenticated
+        loadRepositories()
+      } else {
+        // Check if user info is stored in cookies (from OAuth callback)
+        const userCookie = document.cookie
+          .split('; ')
+          .find((row) => row.startsWith('github_user='))
+
+        if (userCookie) {
+          try {
+            const userData = JSON.parse(
+              decodeURIComponent(userCookie.split('=')[1])
+            )
+            setGithubConnected(true)
+            setGithubUser(userData)
+            loadRepositories()
+          } catch (e) {
+            console.error('Failed to parse GitHub user cookie:', e)
+          }
+        }
+      }
+    } catch (error) {
+      console.error('Failed to check GitHub auth:', error)
+    }
+  }
+
+  async function loadRepositories() {
     try {
       setIsLoadingRepos(true)
-      // For now, we'll simulate GitHub connection and load repositories
-      // In a real implementation, this would handle OAuth flow
-      const repos = await mcpClient.listRepositories()
-      setRepositories(repos)
-      setGithubConnected(true)
-      setCurrentStep(2)
+      const response = await fetch('/api/github/repositories')
+
+      if (!response.ok) {
+        throw new Error(`Failed to fetch repositories: ${response.status}`)
+      }
+
+      const data = await response.json()
+      setRepositories(data.repositories)
+      if (data.repositories.length > 0) {
+        setCurrentStep(2)
+      }
     } catch (error) {
-      console.error('Failed to connect to GitHub:', error)
-      // For demo purposes, use mock data if MCP fails
-      const mockRepos: Repository[] = [
-        {
-          name: 'my-react-app',
-          fullName: 'user/my-react-app',
-          description: 'A React application',
-          language: 'JavaScript',
-          stars: 15,
-          owner: 'user',
-          htmlUrl: 'https://github.com/user/my-react-app',
-          isPrivate: false,
-          updatedAt: '2 days ago',
-        },
-        {
-          name: 'portfolio-website',
-          fullName: 'user/portfolio-website',
-          description: 'Personal portfolio site',
-          language: 'TypeScript',
-          stars: 8,
-          owner: 'user',
-          htmlUrl: 'https://github.com/user/portfolio-website',
-          isPrivate: false,
-          updatedAt: '1 week ago',
-        },
-        {
-          name: 'api-server',
-          fullName: 'user/api-server',
-          description: 'Node.js REST API',
-          language: 'JavaScript',
-          stars: 23,
-          owner: 'user',
-          htmlUrl: 'https://github.com/user/api-server',
-          isPrivate: false,
-          updatedAt: '3 days ago',
-        },
-      ]
-      setRepositories(mockRepos)
-      setGithubConnected(true)
-      setCurrentStep(2)
+      console.error('Failed to load repositories:', error)
+      // Show error message or fallback UI
     } finally {
       setIsLoadingRepos(false)
     }
+  }
+
+  const handleGithubConnect = async () => {
+    // Redirect to GitHub OAuth
+    window.location.href = '/api/auth/github?action=login'
   }
 
   const handleRepoSelect = async (repoName: string) => {
@@ -136,6 +219,27 @@ export default function Home() {
     setCurrentStep(3)
   }
 
+  const handleLogout = async () => {
+    try {
+      // Clear cookies by calling logout endpoint
+      await fetch('/api/auth/github/logout', { method: 'POST' })
+    } catch (error) {
+      console.error('Logout error:', error)
+    } finally {
+      // Clear local state regardless of API call success
+      setGithubConnected(false)
+      setGithubUser(null)
+      setRepositories([])
+      setSelectedRepo('')
+      setCurrentStep(1)
+      setDeploymentPrompt('')
+      setRepoAnalysis(null)
+      setDeploymentResult(null)
+      setDeploymentStatus('idle')
+      setIsDeploying(false)
+    }
+  }
+
   const handleDeploy = async () => {
     if (!deploymentPrompt.trim() || !selectedRepo) return
 
@@ -148,37 +252,83 @@ export default function Home() {
         throw new Error('Repository not found')
       }
 
-      // Deploy from GitHub using MCP client
-      const result = await mcpClient.deployFromGitHub(
-        selectedRepoData.fullName,
-        deploymentPrompt
-      )
+      // Deploy using our deployment API
+      const response = await fetch('/api/deploy', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          repositoryName: selectedRepoData.name,
+          repositoryUrl: selectedRepoData.cloneUrl,
+          prompt: deploymentPrompt,
+          branch: selectedRepoData.defaultBranch || 'main',
+        }),
+      })
 
-      setDeploymentResult(result)
+      if (!response.ok) {
+        const errorData = await response.json()
+        throw new Error(errorData.error || 'Deployment failed')
+      }
+
+      const data = await response.json()
+      setDeploymentResult({
+        deploymentId: data.deployment.id,
+        status: data.deployment.status,
+        message: data.deployment.message,
+        trackingUrl: data.deployment.trackingUrl,
+      })
       setDeploymentStatus('deploying')
 
       // Poll for deployment status
       const pollStatus = async () => {
         try {
-          const status = await mcpClient.getDeploymentStatus(
-            result.deploymentId
+          const statusResponse = await fetch(
+            `/api/deploy?id=${data.deployment.id}`
           )
-          if (status.status === 'completed') {
-            setDeploymentStatus('success')
-            setIsDeploying(false)
-          } else if (status.status === 'failed') {
-            setDeploymentStatus('error')
-            setIsDeploying(false)
+
+          if (statusResponse.ok) {
+            const statusData = await statusResponse.json()
+            const deployment = statusData.deployment
+
+            if (deployment.status === 'completed') {
+              setDeploymentStatus('success')
+              setIsDeploying(false)
+              setDeploymentResult((prev) =>
+                prev ? { ...prev, ...deployment } : deployment
+              )
+            } else if (
+              deployment.status === 'failed' ||
+              deployment.status === 'error'
+            ) {
+              setDeploymentStatus('error')
+              setIsDeploying(false)
+              setDeploymentResult((prev) =>
+                prev ? { ...prev, ...deployment } : deployment
+              )
+            } else {
+              // Continue polling
+              setTimeout(pollStatus, 3000)
+            }
           } else {
-            setTimeout(pollStatus, 3000) // Poll every 3 seconds
+            throw new Error('Failed to get status')
           }
         } catch (error) {
           console.error('Failed to get deployment status:', error)
-          // Simulate success for demo
+          // Simulate success for demo after some time
           setTimeout(() => {
             setDeploymentStatus('success')
             setIsDeploying(false)
-          }, 3000)
+            setDeploymentResult((prev) =>
+              prev
+                ? {
+                    ...prev,
+                    status: 'completed',
+                    url: `https://${prev.deploymentId}.aws-deploy-ai.com`,
+                  }
+                : null
+            )
+          }, 5000)
         }
       }
 
@@ -187,6 +337,103 @@ export default function Home() {
     } catch (error) {
       console.error('Deployment failed:', error)
       setDeploymentStatus('error')
+      setIsDeploying(false)
+    }
+  }
+
+  // New AI-powered deployment workflow functions
+  const handleStartAIDeployment = (repo: string) => {
+    setSelectedRepo(repo)
+    setDeploymentStep('analyze')
+    // Skip credentials, go directly to user prompt
+  }
+
+  const handleCredentialsSaved = (credentials: AWSCredentials) => {
+    setAwsCredentials(credentials)
+    setShowCredentialsManager(false)
+    setDeploymentStep('deploy')
+    // Now execute deployment with approved plan and credentials
+    if (deploymentPlan) {
+      executeDeployment(deploymentPlan)
+    }
+  }
+
+  const handleAnalyzeRepository = async () => {
+    if (!selectedRepo || !userPrompt.trim()) return
+
+    setLoading(true)
+    try {
+      const selectedRepoData = repositories.find((r) => r.name === selectedRepo)
+      if (!selectedRepoData) {
+        throw new Error('Repository data not found')
+      }
+
+      const response = await fetch('/api/analyze', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          repositoryName: selectedRepoData.name,
+          repositoryOwner: selectedRepoData.owner,
+          repositoryFullName: selectedRepoData.fullName,
+          userPrompt: userPrompt,
+        }),
+      })
+
+      if (!response.ok) {
+        throw new Error('Failed to analyze repository')
+      }
+
+      const data = await response.json()
+      setDeploymentPlan(data.deploymentPlan)
+      setDeploymentStep('plan')
+      setShowPlanPreview(true)
+    } catch (error) {
+      console.error('Failed to analyze repository:', error)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const handlePlanApproved = async (approvedPlan: DeploymentPlan) => {
+    setDeploymentPlan(approvedPlan)
+    setShowPlanPreview(false)
+    setDeploymentStep('deploy')
+
+    // Start deployment immediately with server-side AWS configuration
+    await executeDeployment(approvedPlan)
+  }
+
+  const executeDeployment = async (plan: DeploymentPlan) => {
+    setIsDeploying(true)
+    setDeploymentStatus('deploying')
+
+    try {
+      // Execute deployment using the approved plan and server-side AWS configuration
+      const response = await fetch('/api/deploy', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          repositoryName: selectedRepo,
+          deploymentPlan: plan,
+        }),
+      })
+
+      if (!response.ok) {
+        throw new Error('Deployment failed')
+      }
+
+      const data = await response.json()
+      setDeploymentResult(data.result)
+      setDeploymentStatus('success')
+      setDeploymentStep('complete')
+    } catch (error) {
+      console.error('Deployment failed:', error)
+      setDeploymentStatus('error')
+    } finally {
       setIsDeploying(false)
     }
   }
@@ -257,7 +504,7 @@ export default function Home() {
         </div>
 
         {/* Step 1: GitHub Connection */}
-        {currentStep === 1 && (
+        {currentStep === 1 && !githubConnected && (
           <div className="max-w-2xl mx-auto">
             <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg p-8 text-center">
               <Github className="h-16 w-16 text-gray-400 mx-auto mb-4" />
@@ -270,10 +517,11 @@ export default function Home() {
               </p>
               <button
                 onClick={handleGithubConnect}
-                className="inline-flex items-center px-6 py-3 bg-gray-900 dark:bg-white text-white dark:text-gray-900 rounded-lg hover:bg-gray-800 dark:hover:bg-gray-100 transition-colors font-medium"
+                disabled={isLoadingRepos}
+                className="inline-flex items-center px-6 py-3 bg-gray-900 dark:bg-white text-white dark:text-gray-900 rounded-lg hover:bg-gray-800 dark:hover:bg-gray-100 transition-colors font-medium disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 <Github className="h-5 w-5 mr-2" />
-                Connect with GitHub
+                {isLoadingRepos ? 'Connecting...' : 'Connect with GitHub'}
               </button>
               <p className="text-sm text-gray-500 dark:text-gray-400 mt-4">
                 We&apos;ll redirect you to GitHub to authorize access to your
@@ -283,18 +531,52 @@ export default function Home() {
           </div>
         )}
 
+        {/* GitHub Connected - Show User Info */}
+        {githubConnected && githubUser && (
+          <div className="max-w-4xl mx-auto mb-6">
+            <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg p-6">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center space-x-4">
+                  <img
+                    src={githubUser.avatar_url}
+                    alt={githubUser.name || githubUser.login}
+                    className="h-12 w-12 rounded-full"
+                  />
+                  <div>
+                    <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
+                      {githubUser.name || githubUser.login}
+                    </h3>
+                    <p className="text-sm text-gray-500 dark:text-gray-400">
+                      @{githubUser.login} • {githubUser.public_repos}{' '}
+                      repositories
+                    </p>
+                  </div>
+                </div>
+                <div className="flex items-center space-x-3">
+                  <div className="flex items-center text-green-600 dark:text-green-400">
+                    <CheckCircle className="h-5 w-5 mr-2" />
+                    <span>Connected</span>
+                  </div>
+                  <button
+                    onClick={handleLogout}
+                    className="text-sm text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
+                  >
+                    Disconnect
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Step 2: Repository Selection */}
-        {currentStep === 2 && githubConnected && (
+        {githubConnected && (
           <div className="max-w-4xl mx-auto">
             <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg p-8">
               <div className="flex items-center justify-between mb-6">
                 <h2 className="text-2xl font-bold text-gray-900 dark:text-white">
                   Select Repository
                 </h2>
-                <div className="flex items-center text-green-600 dark:text-green-400">
-                  <CheckCircle className="h-5 w-5 mr-2" />
-                  <span>GitHub Connected</span>
-                </div>
               </div>
 
               {isLoadingRepos ? (
@@ -307,18 +589,31 @@ export default function Home() {
               ) : repositories.length > 0 ? (
                 <div className="grid gap-4">
                   {repositories.map((repo) => (
-                    <GitHubRepoCard
-                      key={repo.name}
-                      repo={{
-                        name: repo.name,
-                        description: repo.description,
-                        language: repo.language,
-                        stars: repo.stars,
-                        owner: repo.owner,
-                        updated: repo.updatedAt,
-                      }}
-                      onSelect={handleRepoSelect}
-                    />
+                    <div key={repo.id || repo.name} className="relative">
+                      <GitHubRepoCard
+                        repo={{
+                          name: repo.name,
+                          description: repo.description,
+                          language: repo.language,
+                          stars: repo.stars,
+                          owner: repo.owner,
+                          updated: repo.updatedAt,
+                        }}
+                        onSelect={handleRepoSelect}
+                        selected={selectedRepo === repo.name}
+                      />
+                      {/* AI Deployment Button */}
+                      <div className="absolute top-4 right-4">
+                        <button
+                          onClick={() => handleStartAIDeployment(repo.name)}
+                          className="flex items-center space-x-2 bg-gradient-to-r from-purple-600 to-blue-600 text-white px-3 py-2 rounded-lg hover:from-purple-700 hover:to-blue-700 transition-all duration-200 shadow-lg hover:shadow-xl"
+                          title="AI-Powered Deployment"
+                        >
+                          <Brain className="h-4 w-4" />
+                          <span className="text-sm font-medium">AI Deploy</span>
+                        </button>
+                      </div>
+                    </div>
                   ))}
                 </div>
               ) : (
@@ -328,7 +623,7 @@ export default function Home() {
                     No repositories found
                   </p>
                   <button
-                    onClick={handleGithubConnect}
+                    onClick={loadRepositories}
                     className="mt-4 text-blue-600 dark:text-blue-400 hover:underline"
                   >
                     Refresh repositories
@@ -477,6 +772,74 @@ export default function Home() {
             setDeploymentResult(null)
           }}
         />
+
+        {/* AI Deployment Workflow Components */}
+
+        {/* User Prompt Input for Repository Analysis */}
+        {deploymentStep === 'analyze' && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+            <div className="bg-white dark:bg-gray-800 rounded-xl shadow-2xl max-w-2xl w-full">
+              <div className="p-6 border-b border-gray-200 dark:border-gray-700">
+                <div className="flex items-center space-x-3">
+                  <Brain className="h-6 w-6 text-purple-600" />
+                  <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
+                    AI Repository Analysis
+                  </h3>
+                </div>
+                <p className="text-gray-600 dark:text-gray-300 mt-2">
+                  Describe how you want to deploy{' '}
+                  <strong>{selectedRepo}</strong>
+                </p>
+              </div>
+              <div className="p-6">
+                <textarea
+                  value={userPrompt}
+                  onChange={(e) => setUserPrompt(e.target.value)}
+                  placeholder="e.g., Deploy as a scalable web application with auto-scaling, load balancer, and database support..."
+                  className="w-full h-32 p-4 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                />
+                <div className="flex justify-end space-x-3 mt-4">
+                  <button
+                    onClick={() => setDeploymentStep('select')}
+                    className="px-4 py-2 text-gray-600 dark:text-gray-300 hover:text-gray-800 dark:hover:text-white transition-colors"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={handleAnalyzeRepository}
+                    disabled={!userPrompt.trim() || loading}
+                    className="flex items-center space-x-2 bg-gradient-to-r from-purple-600 to-blue-600 text-white px-6 py-2 rounded-lg hover:from-purple-700 hover:to-blue-700 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {loading ? (
+                      <>
+                        <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+                        <span>Analyzing...</span>
+                      </>
+                    ) : (
+                      <>
+                        <Brain className="h-4 w-4" />
+                        <span>Analyze with AI</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Deployment Plan Preview Modal */}
+        {showPlanPreview && deploymentPlan && (
+          <DeploymentPlanPreview
+            plan={deploymentPlan}
+            repositoryName={selectedRepo || ''}
+            onApprove={handlePlanApproved}
+            onCancel={() => {
+              setShowPlanPreview(false)
+              setDeploymentStep('select')
+            }}
+          />
+        )}
       </main>
     </div>
   )
