@@ -99,6 +99,7 @@ export default function Home() {
   const [deploymentPlan, setDeploymentPlan] = useState<DeploymentPlan | null>(
     null
   )
+  const [analysisData, setAnalysisData] = useState<any | null>(null)
   const [showCredentialsManager, setShowCredentialsManager] = useState(false)
   const [showPlanPreview, setShowPlanPreview] = useState(false)
   const [deploymentStep, setDeploymentStep] = useState<
@@ -374,9 +375,7 @@ export default function Home() {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          repositoryName: selectedRepoData.name,
-          repositoryOwner: selectedRepoData.owner,
-          repositoryFullName: selectedRepoData.fullName,
+          repositoryUrl: `https://github.com/${selectedRepoData.owner}/${selectedRepoData.name}`,
           userPrompt: userPrompt,
         }),
       })
@@ -386,11 +385,16 @@ export default function Home() {
       }
 
       const data = await response.json()
+      console.log('Analysis response:', data) // Debug log
+      console.log('Setting deployment plan:', data.deploymentPlan) // Debug log
+      setAnalysisData(data.analysis)
       setDeploymentPlan(data.deploymentPlan)
       setDeploymentStep('plan')
       setShowPlanPreview(true)
+      console.log('Modal should now be visible') // Debug log
     } catch (error) {
       console.error('Failed to analyze repository:', error)
+      alert('Failed to analyze repository. Please try again.')
     } finally {
       setLoading(false)
     }
@@ -829,12 +833,23 @@ export default function Home() {
         )}
 
         {/* Deployment Plan Preview Modal */}
+        {console.log(
+          'Render check - showPlanPreview:',
+          showPlanPreview,
+          'deploymentPlan:',
+          !!deploymentPlan
+        )}
         {showPlanPreview && deploymentPlan && (
           <DeploymentPlanPreview
             plan={deploymentPlan}
             repositoryName={selectedRepo || ''}
             onApprove={handlePlanApproved}
-            onCancel={() => {
+            onReject={() => {
+              setShowPlanPreview(false)
+              setDeploymentStep('select')
+            }}
+            onModify={(feedback: string) => {
+              console.log('User feedback:', feedback)
               setShowPlanPreview(false)
               setDeploymentStep('select')
             }}
