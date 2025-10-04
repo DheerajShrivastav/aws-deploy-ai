@@ -2,6 +2,7 @@ import { config } from 'dotenv';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { DeploymentTools } from './src/tools/deployment-tools.js';
+import { AIAnalysisTools } from './src/tools/ai-analysis-tools.js';
 import { logger } from './src/utils/logger.js';
 import path from 'path';
 
@@ -374,6 +375,95 @@ Use \`get-deployment-status\` with a specific deployment ID for detailed informa
             text: `❌ **Failed to list deployments**
 
 ${error instanceof Error ? error.message : 'Unknown error'}`,
+          },
+        ],
+      };
+    }
+  }
+);
+
+// AI Repository Analysis Tool
+server.tool(
+  'analyze_repository',
+  'Analyze a repository and generate AI-powered deployment recommendations',
+  {
+    type: 'object',
+    properties: {
+      repositoryData: {
+        type: 'object',
+        description: 'Repository data including name, language, files, etc.',
+        properties: {
+          name: { type: 'string' },
+          language: { type: 'string' },
+          files: { type: 'object' },
+          readme: { type: 'string' },
+        },
+        required: ['name', 'language', 'files'],
+      },
+      userPrompt: {
+        type: 'string',
+        description: 'User requirements for deployment',
+      },
+    },
+    required: ['repositoryData', 'userPrompt'],
+  },
+  async (params) => {
+    try {
+      logger.info('AI Repository Analysis tool called', {
+        params: { repo: params.repositoryData.name },
+      });
+      const result = await AIAnalysisTools.handleToolCall(
+        'analyze_repository',
+        params
+      );
+
+      return {
+        content: [
+          {
+            type: 'text',
+            text: `🤖 **AI Repository Analysis Complete!**
+
+**Repository:** ${params.repositoryData.name}
+**Framework:** ${result.analysis.framework}
+**Architecture:** ${result.deploymentPlan.architecture}
+
+**Recommended Services:**
+${result.deploymentPlan.services
+  .map(
+    (service) =>
+      `• **${service.name}** (${service.type}): ${service.purpose} - ${service.estimated_cost}`
+  )
+  .join('\n')}
+
+**Deployment Steps:**
+${result.deploymentPlan.steps
+  .map((step) => `${step.step}. **${step.action}**: ${step.description}`)
+  .join('\n')}
+
+**Estimated Monthly Cost:** ${result.deploymentPlan.estimated_monthly_cost}
+**Deployment Time:** ${result.deploymentPlan.deployment_time}
+
+**Key Recommendations:**
+${result.deploymentPlan.recommendations
+  .slice(0, 3)
+  .map((rec) => `• ${rec}`)
+  .join('\n')}
+
+Your deployment plan is ready for implementation!`,
+          },
+        ],
+      };
+    } catch (error) {
+      logger.error('AI analysis failed', { error });
+      return {
+        content: [
+          {
+            type: 'text',
+            text: `❌ **AI Analysis Failed**
+
+Error: ${error.message}
+
+Please check the repository data format and try again.`,
           },
         ],
       };
