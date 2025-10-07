@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import {
   Cloud,
   Github,
@@ -20,6 +20,7 @@ import mcpClient, {
 import GitHubRepoCard from '../components/GitHubRepoCard'
 import DeploymentStatus from '../components/DeploymentStatus'
 import AWSCredentialsManager from '../components/AWSCredentialsManager'
+import AWSCredentialsForm from '../components/AWSCredentialsForm'
 import DeploymentPlanPreview from '../components/DeploymentPlanPreview'
 
 interface AWSCredentials {
@@ -100,8 +101,11 @@ export default function Home() {
     null
   )
   const [analysisData, setAnalysisData] = useState<any | null>(null)
+  const [aiInsights, setAiInsights] = useState<any | null>(null)
   const [showCredentialsManager, setShowCredentialsManager] = useState(false)
+  const [showAWSCredentialsForm, setShowAWSCredentialsForm] = useState(false)
   const [showPlanPreview, setShowPlanPreview] = useState(false)
+  const [isValidatingCredentials, setIsValidatingCredentials] = useState(false)
   const [deploymentStep, setDeploymentStep] = useState<
     'select' | 'credentials' | 'analyze' | 'plan' | 'deploy' | 'complete'
   >('select')
@@ -359,7 +363,7 @@ export default function Home() {
     }
   }
 
-  const handleAnalyzeRepository = async () => {
+  const handleAnalyzeRepository = useCallback(async () => {
     if (!selectedRepo || !userPrompt.trim()) return
 
     setLoading(true)
@@ -385,27 +389,86 @@ export default function Home() {
       }
 
       const data = await response.json()
-      console.log('Analysis response:', data) // Debug log
-      console.log('Setting deployment plan:', data.deploymentPlan) // Debug log
       setAnalysisData(data.analysis)
       setDeploymentPlan(data.deploymentPlan)
+      setAiInsights(data.aiInsights) // Store AI insights from Bedrock analysis
       setDeploymentStep('plan')
       setShowPlanPreview(true)
-      console.log('Modal should now be visible') // Debug log
     } catch (error) {
       console.error('Failed to analyze repository:', error)
       alert('Failed to analyze repository. Please try again.')
     } finally {
       setLoading(false)
     }
+  }, [selectedRepo, userPrompt, repositories])
+
+  const handleAWSCredentialsSubmit = async (credentials: AWSCredentials) => {
+    setIsValidatingCredentials(true)
+
+    try {
+      // Validate credentials by making a test AWS call
+      const response = await fetch('/api/validate-aws-credentials', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(credentials),
+      })
+
+      if (!response.ok) {
+        const error = await response.json()
+        throw new Error(error.message || 'Invalid AWS credentials')
+      }
+
+      // Store credentials and proceed with deployment
+      setAwsCredentials(credentials)
+      setShowAWSCredentialsForm(false)
+      setDeploymentStep('deploy')
+
+      // Execute deployment with the approved plan
+      if (deploymentPlan) {
+        await executeDeployment(deploymentPlan)
+      }
+    } catch (error) {
+      console.error('AWS credentials validation failed:', error)
+      alert(
+        `AWS credentials validation failed: ${
+          error instanceof Error ? error.message : 'Unknown error'
+        }`
+      )
+    } finally {
+      setIsValidatingCredentials(false)
+    }
+  }
+
+  const handleAWSCredentialsCancel = () => {
+    setShowAWSCredentialsForm(false)
+    setDeploymentStep('plan')
+    setShowPlanPreview(true) // Go back to plan preview
   }
 
   const handlePlanApproved = async (approvedPlan: DeploymentPlan) => {
+    // Check if user is authenticated before deployment
+    if (!githubConnected) {
+      alert('Please connect your GitHub account first to deploy.')
+      setShowPlanPreview(false)
+      setCurrentStep(1) // Redirect to GitHub connection step
+      return
+    }
+
     setDeploymentPlan(approvedPlan)
     setShowPlanPreview(false)
-    setDeploymentStep('deploy')
 
-    // Start deployment immediately with server-side AWS configuration
+    // Check if AWS credentials are available
+    if (!awsCredentials) {
+      // Show AWS credentials form
+      setShowAWSCredentialsForm(true)
+      setDeploymentStep('credentials')
+      return
+    }
+
+    // Proceed with deployment if credentials are available
+    setDeploymentStep('deploy')
     await executeDeployment(approvedPlan)
   }
 
@@ -414,20 +477,56 @@ export default function Home() {
     setDeploymentStatus('deploying')
 
     try {
-      // Execute deployment using the approved plan and server-side AWS configuration
+      const selectedRepoData = repositories.find((r) => r.name === selectedRepo)
+      if (!selectedRepoData) {
+        throw new Error(
+          'Repository data not found. Please refresh and try again.'
+        )
+      }
+
+      if (!githubConnected) {
+        throw new Error(
+          'GitHub authentication required. Please connect your GitHub account.'
+        )
+      }
+
+      if (!awsCredentials) {
+        throw new Error(
+          'AWS credentials required. Please provide your AWS credentials.'
+        )
+      }
+
+      // Execute deployment using the approved plan and user's AWS credentials
       const response = await fetch('/api/deploy', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          repositoryName: selectedRepo,
+          repositoryName: selectedRepoData.name,
+          repositoryUrl: `https://github.com/${selectedRepoData.owner}/${selectedRepoData.name}`,
+          prompt: `Deploy this repository using the following plan: ${JSON.stringify(
+            plan
+          )}`,
           deploymentPlan: plan,
+          branch: 'main',
+          awsCredentials: awsCredentials, // Include user's AWS credentials
         }),
       })
 
       if (!response.ok) {
-        throw new Error('Deployment failed')
+        const errorData = await response.json().catch(() => ({}))
+
+        // Handle specific error cases
+        if (response.status === 401) {
+          throw new Error(
+            'GitHub authentication required. Please connect your GitHub account.'
+          )
+        }
+
+        throw new Error(
+          errorData.error || `Deployment failed (${response.status})`
+        )
       }
 
       const data = await response.json()
@@ -437,6 +536,21 @@ export default function Home() {
     } catch (error) {
       console.error('Deployment failed:', error)
       setDeploymentStatus('error')
+
+      // Show user-friendly error message
+      const errorMessage =
+        error instanceof Error ? error.message : 'Unknown deployment error'
+
+      // Handle authentication errors specially
+      if (errorMessage.includes('GitHub authentication')) {
+        alert(
+          `${errorMessage}\n\nYou will be redirected to the GitHub connection page.`
+        )
+        setShowPlanPreview(false)
+        setCurrentStep(1) // Redirect to GitHub connection step
+      } else {
+        alert(`Deployment failed: ${errorMessage}`)
+      }
     } finally {
       setIsDeploying(false)
     }
@@ -833,16 +947,11 @@ export default function Home() {
         )}
 
         {/* Deployment Plan Preview Modal */}
-        {console.log(
-          'Render check - showPlanPreview:',
-          showPlanPreview,
-          'deploymentPlan:',
-          !!deploymentPlan
-        )}
         {showPlanPreview && deploymentPlan && (
           <DeploymentPlanPreview
             plan={deploymentPlan}
             repositoryName={selectedRepo || ''}
+            aiInsights={aiInsights}
             onApprove={handlePlanApproved}
             onReject={() => {
               setShowPlanPreview(false)
@@ -853,6 +962,15 @@ export default function Home() {
               setShowPlanPreview(false)
               setDeploymentStep('select')
             }}
+          />
+        )}
+
+        {/* AWS Credentials Form Modal */}
+        {showAWSCredentialsForm && (
+          <AWSCredentialsForm
+            onCredentialsSubmit={handleAWSCredentialsSubmit}
+            onCancel={handleAWSCredentialsCancel}
+            isValidating={isValidatingCredentials}
           />
         )}
       </main>

@@ -1,0 +1,388 @@
+import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest, NextResponse } from 'next/server'
+
+
+
+
+export async function POST(request: NextRequest) {// Import MCP server tools directly
+
+  try {
+
+    console.log('🔍 Analyze API called')import { AIAnalysisTools } from '../../../../mcp-server/src/tools/ai-analysis-tools.js'// Import MCP server tools directly// Import MCP server tools directly
+
+    const body = await request.json()
+
+    const { repositoryName, repositoryOwner, repositoryFullName, userPrompt } = body
+
+
+
+    console.log('📝 Request data:', {export async function POST(request: NextRequest) {import { AIAnalysisTools } from '../../../../mcp-server/src/tools/ai-analysis-tools.js'import { AIAnalysisTools } from '../../../../mcp-server/src/tools/ai-analysis-tools.js'
+
+      repositoryName,
+
+      repositoryOwner,  try {
+
+      repositoryFullName,
+
+      userPrompt,    console.log('🔍 Analyze API called')
+
+    })
+
+    const body = await request.json()
+
+    if (!repositoryName || !repositoryOwner || !userPrompt) {
+
+      console.log('❌ Missing required fields')    const { repositoryName, repositoryOwner, repositoryFullName, userPrompt } = bodyexport async function POST(request: NextRequest) {export async function POST(request: NextRequest) {
+
+      return NextResponse.json(
+
+        {
+
+          error: 'Missing required fields: repositoryName, repositoryOwner, or userPrompt',
+
+        },    console.log('📝 Request data:', {  try {  try {
+
+        { status: 400 }
+
+      )      repositoryName,
+
+    }
+
+      repositoryOwner,    console.log('🔍 Analyze API called')    console.log('🔍 Analyze API called')
+
+    console.log('🤖 Calling MCP API for repository analysis...')
+
+      repositoryFullName,
+
+    try {
+
+      // Call the existing MCP API endpoint      userPrompt,    const body = await request.json()    const body = await request.json()
+
+      const mcpResponse = await fetch('http://localhost:3000/api/mcp', {
+
+        method: 'POST',    })
+
+        headers: {
+
+          'Content-Type': 'application/json',    const { repositoryName, repositoryOwner, repositoryFullName, userPrompt } =    const { repositoryName, repositoryOwner, repositoryFullName, userPrompt } =
+
+        },
+
+        body: JSON.stringify({    if (!repositoryName || !repositoryOwner || !userPrompt) {
+
+          method: 'analyze_repository',
+
+          params: {      console.log('❌ Missing required fields')      body      body
+
+            repositoryName: repositoryName,
+
+            repositoryOwner: repositoryOwner,      return NextResponse.json(
+
+            repositoryFullName: repositoryFullName,
+
+            userPrompt: userPrompt,        {
+
+          },
+
+        }),          error: 'Missing required fields: repositoryName, repositoryOwner, or userPrompt',
+
+      })
+
+        },    console.log('📝 Request data:', {    console.log('📝 Request data:', {
+
+      if (!mcpResponse.ok) {
+
+        throw new Error(`MCP API error: ${mcpResponse.statusText}`)        { status: 400 }
+
+      }
+
+      )      repositoryName,      repositoryName,
+
+      const mcpResult = await mcpResponse.json()
+
+          }
+
+      if (mcpResult.error) {
+
+        throw new Error(mcpResult.error.message || 'MCP API returned an error')      repositoryOwner,      repositoryOwner,
+
+      }
+
+    console.log('🤖 Starting AI analysis directly with MCP tools...')
+
+      console.log('✅ MCP analysis completed successfully')
+
+            repositoryFullName,      repositoryFullName,
+
+      // Transform the response to match the expected format
+
+      return NextResponse.json({    try {
+
+        success: true,
+
+        analysis: mcpResult.result.analysis,      // Call MCP AI analysis tools directly (no HTTP needed!)      userPrompt,      userPrompt,
+
+        deploymentPlan: {
+
+          architecture: 'Simple web application deployment',      const result = await AIAnalysisTools.handleToolCall('analyze_github_repository', {
+
+          services: [
+
+            {        owner: repositoryOwner,    })    })
+
+              name: 'Static Website',
+
+              type: 'S3 + CloudFront',        repo: repositoryName,
+
+              purpose: 'Host and serve the application',
+
+              estimated_cost: '$5-15/month'        userPrompt: userPrompt,
+
+            }
+
+          ],      })
+
+          steps: [
+
+            {    if (!repositoryName || !repositoryOwner || !userPrompt) {    if (!repositoryName || !repositoryOwner || !userPrompt) {
+
+              step: 1,
+
+              action: 'Build Application',      console.log('✅ AI analysis completed successfully')
+
+              description: 'Build the application for production',
+
+              resources: ['Build artifacts']            console.log('❌ Missing required fields')      console.log('❌ Missing required fields')
+
+            },
+
+            {      return NextResponse.json({
+
+              step: 2,
+
+              action: 'Create S3 Bucket',        success: true,      return NextResponse.json(      return NextResponse.json(
+
+              description: 'Create S3 bucket for static hosting',
+
+              resources: ['S3 Bucket']        analysis: result.analysis,
+
+            },
+
+            {        deploymentPlan: result.deploymentPlan,        {        {
+
+              step: 3,
+
+              action: 'Setup CloudFront',        repositoryData: {
+
+              description: 'Configure CDN for global distribution',
+
+              resources: ['CloudFront Distribution']          name: repositoryName,          error:          error:
+
+            }
+
+          ],          owner: repositoryOwner,
+
+          estimated_monthly_cost: '$5 - $15',
+
+          deployment_time: '5-10 minutes',          fullName: repositoryFullName,            'Missing required fields: repositoryName, repositoryOwner, or userPrompt',            'Missing required fields: repositoryName, repositoryOwner, or userPrompt',
+
+          requirements: ['AWS Account', 'GitHub Repository'],
+
+          recommendations: mcpResult.result.recommendations || []        },
+
+        },
+
+        repositoryData: {      })        },        },
+
+          name: repositoryName,
+
+          owner: repositoryOwner,    } catch (analysisError) {
+
+          fullName: repositoryFullName,
+
+        },      console.error('❌ AI analysis failed:', analysisError)        { status: 400 }        { status: 400 }
+
+      })
+
+    } catch (analysisError) {      return NextResponse.json(
+
+      console.error('❌ MCP analysis failed:', analysisError)
+
+      return NextResponse.json(        {      )      )
+
+        {
+
+          error: 'Analysis failed',          error: 'AI analysis failed',
+
+          details: analysisError instanceof Error ? analysisError.message : 'Unknown analysis error',
+
+        },          details: analysisError instanceof Error ? analysisError.message : 'Unknown AI analysis error',    }    }
+
+        { status: 500 }
+
+      )        },
+
+    }
+
+  } catch (error) {        { status: 500 }
+
+    console.error('❌ Repository analysis error:', error)
+
+    console.error('Error details:', {      )
+
+      message: error instanceof Error ? error.message : 'Unknown error',
+
+      stack: error instanceof Error ? error.stack : undefined,    }    console.log('🤖 Starting AI analysis directly with MCP tools...')    console.log('🤖 Starting AI analysis directly with MCP tools...')
+
+    })
+
+  } catch (error) {
+
+    return NextResponse.json(
+
+      {    console.error('❌ Repository analysis error:', error)
+
+        error: 'Analysis failed',
+
+        details: error instanceof Error ? error.message : 'Unknown error',    console.error('Error details:', {
+
+      },
+
+      { status: 500 }      message: error instanceof Error ? error.message : 'Unknown error',    try {    try {
+
+    )
+
+  }      stack: error instanceof Error ? error.stack : undefined,
+
+}
+    })      // Call MCP AI analysis tools directly (no HTTP needed!)      // Call MCP AI analysis tools directly (no HTTP needed!)
+
+
+
+    return NextResponse.json(      const result = await AIAnalysisTools.handleToolCall('analyze_github_repository', {      const result = await AIAnalysisTools.handleToolCall('analyze_github_repository', {
+
+      {
+
+        error: 'Analysis failed',        owner: repositoryOwner,        owner: repositoryOwner,
+
+        details: error instanceof Error ? error.message : 'Unknown error',
+
+      },        repo: repositoryName,        repo: repositoryName,
+
+      { status: 500 }
+
+    )        userPrompt: userPrompt,        userPrompt: userPrompt,
+
+  }
+
+}      })      })
+
+
+
+      console.log('✅ AI analysis completed successfully')      console.log('✅ AI analysis completed successfully')
+
+            
+
+      return NextResponse.json({      return NextResponse.json({
+
+        success: true,        success: true,
+
+        analysis: result.analysis,        analysis: result.analysis,
+
+        deploymentPlan: result.deploymentPlan,        deploymentPlan: result.deploymentPlan,
+
+        repositoryData: {        repositoryData: {
+
+          name: repositoryName,          name: repositoryName,
+
+          owner: repositoryOwner,          owner: repositoryOwner,
+
+          fullName: repositoryFullName,          fullName: repositoryFullName,
+
+        },        },
+
+      })      })
+
+    } catch (analysisError) {    } catch (analysisError) {
+
+      console.error('❌ AI analysis failed:', analysisError)      console.error('❌ AI analysis failed:', analysisError)
+
+      return NextResponse.json(      return NextResponse.json(
+
+        {        {
+
+          error: 'AI analysis failed',          error: 'AI analysis failed',
+
+          details: analysisError instanceof Error ? analysisError.message : 'Unknown AI analysis error',          details: analysisError instanceof Error ? analysisError.message : 'Unknown AI analysis error',
+
+        },        },
+
+        { status: 500 }        { status: 500 }
+
+      )      )
+
+    }    }
+
+  } catch (error) {        throw new Error(`MCP server error: ${mcpResponse.statusText}`)
+
+    console.error('❌ Repository analysis error:', error)      }
+
+    console.error('Error details:', {
+
+      message: error instanceof Error ? error.message : 'Unknown error',      const mcpResult = await mcpResponse.json()
+
+      stack: error instanceof Error ? error.stack : undefined,
+
+    })      if (!mcpResult.result) {
+
+        throw new Error('MCP server returned no result')
+
+    return NextResponse.json(      }
+
+      {
+
+        error: 'Analysis failed',      console.log('✅ MCP AI analysis completed successfully')
+
+        details: error instanceof Error ? error.message : 'Unknown error',
+
+      },      return NextResponse.json({
+
+      { status: 500 }        success: true,
+
+    )        analysis: mcpResult.result.analysis,
+
+  }        deploymentPlan: mcpResult.result.deploymentPlan,
+
+}        repositoryData: {
+          name: repositoryName,
+          owner: repositoryOwner,
+          fullName: repositoryFullName,
+        },
+      })
+    } catch (mcpError) {
+      console.error('❌ MCP AI analysis failed:', mcpError)
+      return NextResponse.json(
+        {
+          error: 'AI analysis failed',
+          details:
+            mcpError instanceof Error ? mcpError.message : 'Unknown MCP error',
+        },
+        { status: 500 }
+      )
+    }
+  } catch (error) {
+    console.error('❌ Repository analysis error:', error)
+    console.error('Error details:', {
+      message: error instanceof Error ? error.message : 'Unknown error',
+      stack: error instanceof Error ? error.stack : undefined,
+    })
+
+    return NextResponse.json(
+      {
+        error: 'Analysis failed',
+        details: error instanceof Error ? error.message : 'Unknown error',
+      },
+      { status: 500 }
+    )
+  }
+}
