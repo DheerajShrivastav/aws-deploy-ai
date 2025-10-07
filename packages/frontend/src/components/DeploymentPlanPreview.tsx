@@ -10,6 +10,9 @@ import {
   Edit3,
   AlertTriangle,
   Zap,
+  Brain,
+  BarChart3,
+  TrendingUp,
 } from 'lucide-react'
 
 interface DeploymentPlan {
@@ -32,9 +35,32 @@ interface DeploymentPlan {
   recommendations: string[]
 }
 
+interface AIInsights {
+  complexity: string
+  traffic: string
+  specialRequirements: string[]
+  environmentVariables: Array<{
+    name: string
+    description: string
+    required: boolean
+    defaultValue?: string
+  }>
+  monitoring: {
+    metrics: string[]
+    alerts: string[]
+    dashboards: string[]
+  }
+  cicd: {
+    recommended: boolean
+    pipeline: string
+    tools: string[]
+  }
+}
+
 interface DeploymentPlanPreviewProps {
   plan: DeploymentPlan
   repositoryName: string
+  aiInsights?: AIInsights
   onApprove: (modifiedPlan: DeploymentPlan) => void
   onReject: () => void
   onModify: (feedback: string) => void
@@ -56,6 +82,7 @@ const SERVICE_ICONS: {
 export default function DeploymentPlanPreview({
   plan,
   repositoryName,
+  aiInsights,
   onApprove,
   onReject,
   onModify,
@@ -113,6 +140,111 @@ export default function DeploymentPlanPreview({
           </div>
 
           <div className="p-6 space-y-6">
+            {/* AI Insights Section */}
+            {aiInsights && (
+              <div className="bg-gradient-to-r from-purple-50 to-blue-50 dark:from-purple-900/20 dark:to-blue-900/20 border border-purple-200 dark:border-purple-800 rounded-lg p-4">
+                <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-3 flex items-center">
+                  <Brain className="h-5 w-5 mr-2 text-purple-600" />
+                  AI Analysis Insights
+                </h3>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+                  <div className="text-center">
+                    <div className="flex items-center justify-center space-x-2 mb-1">
+                      <BarChart3 className="h-4 w-4 text-purple-600" />
+                      <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                        Complexity
+                      </span>
+                    </div>
+                    <p className="text-lg font-bold text-purple-700 dark:text-purple-300 capitalize">
+                      {aiInsights.complexity}
+                    </p>
+                  </div>
+                  <div className="text-center">
+                    <div className="flex items-center justify-center space-x-2 mb-1">
+                      <TrendingUp className="h-4 w-4 text-blue-600" />
+                      <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                        Expected Traffic
+                      </span>
+                    </div>
+                    <p className="text-lg font-bold text-blue-700 dark:text-blue-300 capitalize">
+                      {aiInsights.traffic}
+                    </p>
+                  </div>
+                  <div className="text-center">
+                    <div className="flex items-center justify-center space-x-2 mb-1">
+                      <CheckCircle className="h-4 w-4 text-green-600" />
+                      <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                        CI/CD Ready
+                      </span>
+                    </div>
+                    <p className="text-lg font-bold text-green-700 dark:text-green-300">
+                      {aiInsights.cicd?.recommended ? 'Yes' : 'Manual'}
+                    </p>
+                  </div>
+                </div>
+
+                {aiInsights.specialRequirements &&
+                  aiInsights.specialRequirements.length > 0 && (
+                    <div className="mb-3">
+                      <h4 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                        Special Requirements:
+                      </h4>
+                      <div className="flex flex-wrap gap-2">
+                        {aiInsights.specialRequirements.map((req, idx) => (
+                          <span
+                            key={idx}
+                            className="px-2 py-1 bg-purple-100 dark:bg-purple-900/50 text-purple-700 dark:text-purple-300 text-xs rounded-full"
+                          >
+                            {req}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                {aiInsights.environmentVariables &&
+                  aiInsights.environmentVariables.length > 0 && (
+                    <div>
+                      <h4 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                        Environment Variables:
+                      </h4>
+                      <div className="grid gap-2">
+                        {aiInsights.environmentVariables
+                          .slice(0, 3)
+                          .map((envVar, idx) => (
+                            <div
+                              key={idx}
+                              className="flex items-center justify-between bg-white dark:bg-gray-800 rounded p-2 text-xs"
+                            >
+                              <span className="font-mono text-purple-600 dark:text-purple-400">
+                                {envVar.name}
+                              </span>
+                              <span className="text-gray-500 dark:text-gray-400">
+                                {envVar.description}
+                              </span>
+                              <span
+                                className={`px-1 py-0.5 rounded text-xs ${
+                                  envVar.required
+                                    ? 'bg-red-100 text-red-700 dark:bg-red-900/50 dark:text-red-300'
+                                    : 'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-400'
+                                }`}
+                              >
+                                {envVar.required ? 'Required' : 'Optional'}
+                              </span>
+                            </div>
+                          ))}
+                        {aiInsights.environmentVariables.length > 3 && (
+                          <p className="text-xs text-gray-500 dark:text-gray-400">
+                            +{aiInsights.environmentVariables.length - 3} more
+                            variables...
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                  )}
+              </div>
+            )}
+
             {/* Architecture Overview */}
             <div>
               <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-3 flex items-center">
