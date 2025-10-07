@@ -1,16 +1,31 @@
 import { NextRequest, NextResponse } from 'next/server'
 
+interface AWSCredentials {
+  accessKeyId: string
+  secretAccessKey: string
+  region: string
+}
+
 interface DeploymentRequest {
   repositoryName: string
   repositoryUrl: string
   prompt: string
+  deploymentPlan?: any
   branch?: string
+  awsCredentials?: AWSCredentials
 }
 
 export async function POST(request: NextRequest) {
   try {
     const body: DeploymentRequest = await request.json()
-    const { repositoryName, repositoryUrl, prompt, branch = 'main' } = body
+    const {
+      repositoryName,
+      repositoryUrl,
+      prompt,
+      deploymentPlan,
+      branch = 'main',
+      awsCredentials,
+    } = body
 
     // Validate required fields
     if (!repositoryName || !repositoryUrl || !prompt) {
@@ -19,6 +34,19 @@ export async function POST(request: NextRequest) {
           error:
             'Missing required fields: repositoryName, repositoryUrl, or prompt',
         },
+        { status: 400 }
+      )
+    }
+
+    // Validate AWS credentials
+    if (
+      !awsCredentials ||
+      !awsCredentials.accessKeyId ||
+      !awsCredentials.secretAccessKey ||
+      !awsCredentials.region
+    ) {
+      return NextResponse.json(
+        { error: 'AWS credentials are required for deployment' },
         { status: 400 }
       )
     }
@@ -32,7 +60,7 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Send deployment request to MCP server
+    // Send deployment request to MCP server with AWS credentials
     const mcpResponse = await fetch(
       `${process.env.MCP_API_URL || 'http://localhost:3000'}/api/mcp`,
       {
@@ -46,9 +74,21 @@ export async function POST(request: NextRequest) {
           params: {
             repositoryUrl,
             repositoryName,
+            deploymentPlan: deploymentPlan || {
+              architecture: 'EC2 Deployment',
+              services: [
+                {
+                  name: 'Web Application',
+                  type: 'EC2',
+                  purpose: 'Host application',
+                  estimated_cost: '$20-50/month',
+                },
+              ],
+            },
             prompt,
             branch,
             githubToken, // Pass token for MCP server to access repo
+            awsCredentials, // Pass user's AWS credentials securely
           },
         }),
       }
