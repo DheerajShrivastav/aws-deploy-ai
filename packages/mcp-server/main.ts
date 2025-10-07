@@ -3,6 +3,7 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { DeploymentTools } from './src/tools/deployment-tools.js';
 import { AIAnalysisTools } from './src/tools/ai-analysis-tools.js';
+import { RealDeploymentTools } from './src/tools/real-deployment-tools.js';
 import { logger } from './src/utils/logger.js';
 import path from 'path';
 
@@ -464,6 +465,151 @@ Your deployment plan is ready for implementation!`,
 Error: ${error.message}
 
 Please check the repository data format and try again.`,
+          },
+        ],
+      };
+    }
+  }
+);
+
+// Real GitHub Deployment Tool
+server.tool(
+  'deploy_from_github',
+  'Deploy a GitHub repository to AWS with real infrastructure provisioning',
+  {
+    type: 'object',
+    properties: {
+      repositoryUrl: {
+        type: 'string',
+        description: 'GitHub repository URL to deploy',
+      },
+      repositoryName: {
+        type: 'string',
+        description: 'Name of the repository',
+      },
+      deploymentPlan: {
+        type: 'object',
+        description: 'Deployment plan with architecture and services',
+      },
+      prompt: {
+        type: 'string',
+        description: 'User deployment requirements',
+      },
+      branch: {
+        type: 'string',
+        description: 'Git branch to deploy (default: main)',
+        default: 'main',
+      },
+    },
+    required: ['repositoryUrl', 'repositoryName', 'deploymentPlan', 'prompt'],
+  },
+  async (params) => {
+    try {
+      logger.info('Real GitHub deployment tool called', {
+        repo: params.repositoryName,
+        url: params.repositoryUrl,
+      });
+
+      const result = await RealDeploymentTools.handleToolCall(
+        'deploy_from_github',
+        params
+      );
+
+      return {
+        content: [
+          {
+            type: 'text',
+            text: `🚀 **Real Deployment Started!**
+
+**Deployment ID:** ${result.deploymentId}
+**Repository:** ${params.repositoryName}
+**Status:** ${result.status}
+**Region:** ${result.awsRegion}
+
+Your application is being deployed to AWS. This includes:
+1. Cloning the GitHub repository
+2. Analyzing project structure
+3. Provisioning AWS infrastructure
+4. Building and deploying the application
+
+Track progress with deployment ID: ${result.deploymentId}`,
+          },
+        ],
+      };
+    } catch (error) {
+      logger.error('Real deployment failed', { error });
+      return {
+        content: [
+          {
+            type: 'text',
+            text: `❌ **Deployment Failed**
+
+Error: ${error instanceof Error ? error.message : 'Unknown error'}
+
+Please check your repository URL and deployment plan, then try again.`,
+          },
+        ],
+      };
+    }
+  }
+);
+
+// Get Real Deployment Status Tool
+server.tool(
+  'get_deployment_status',
+  'Get the status of a real deployment',
+  {
+    type: 'object',
+    properties: {
+      deploymentId: {
+        type: 'string',
+        description: 'Deployment ID to check status for',
+      },
+    },
+    required: ['deploymentId'],
+  },
+  async (params) => {
+    try {
+      const result = await RealDeploymentTools.handleToolCall(
+        'get_deployment_status',
+        params
+      );
+
+      const stepsText = result.steps
+        .map(
+          (step: any) =>
+            `${step.status === 'completed' ? '✅' : step.status === 'failed' ? '❌' : '⏳'} ${step.name}: ${step.message}`
+        )
+        .join('\n');
+
+      return {
+        content: [
+          {
+            type: 'text',
+            text: `📊 **Deployment Status**
+
+**Deployment ID:** ${result.deploymentId}
+**Status:** ${result.status}
+**Repository:** ${result.repositoryUrl}
+${result.publicUrl ? `**Public URL:** ${result.publicUrl}` : ''}
+${result.instanceId ? `**EC2 Instance:** ${result.instanceId}` : ''}
+
+**Progress Steps:**
+${stepsText}
+
+${result.error ? `**Error:** ${result.error}` : ''}`,
+          },
+        ],
+      };
+    } catch (error) {
+      logger.error('Failed to get deployment status', { error });
+      return {
+        content: [
+          {
+            type: 'text',
+            text: `❌ **Failed to Get Status**
+
+Error: ${error instanceof Error ? error.message : 'Unknown error'}`,
           },
         ],
       };
