@@ -12,6 +12,7 @@ import {
   CheckCircle,
   Brain,
   Key,
+  Activity,
 } from 'lucide-react'
 import mcpClient, {
   type DeploymentResult,
@@ -22,6 +23,7 @@ import DeploymentStatus from '../components/DeploymentStatus'
 import AWSCredentialsManager from '../components/AWSCredentialsManager'
 import AWSCredentialsForm from '../components/AWSCredentialsForm'
 import DeploymentPlanPreview from '../components/DeploymentPlanPreview'
+import RealTimeDeploymentStatus from '../components/RealTimeDeploymentStatus'
 
 interface AWSCredentials {
   accessKeyId: string
@@ -106,6 +108,11 @@ export default function Home() {
   const [showAWSCredentialsForm, setShowAWSCredentialsForm] = useState(false)
   const [showPlanPreview, setShowPlanPreview] = useState(false)
   const [isValidatingCredentials, setIsValidatingCredentials] = useState(false)
+  const [currentDeploymentId, setCurrentDeploymentId] = useState<string | null>(
+    null
+  )
+  const [showRealTimeStatus, setShowRealTimeStatus] = useState(false)
+  const [showDeploymentStatus, setShowDeploymentStatus] = useState(false)
   const [deploymentStep, setDeploymentStep] = useState<
     'select' | 'credentials' | 'analyze' | 'plan' | 'deploy' | 'complete'
   >('select')
@@ -529,28 +536,46 @@ export default function Home() {
         )
       }
 
-      const data = await response.json()
-      setDeploymentResult(data.result)
-      setDeploymentStatus('success')
-      setDeploymentStep('complete')
+      const deploymentResult = await response.json()
+
+      // Log the response structure for debugging
+      console.log('Deployment result:', deploymentResult)
+
+      // Extract deployment ID and actual status
+      const deploymentId =
+        deploymentResult?.result?.deploymentId ||
+        deploymentResult?.deploymentId ||
+        deploymentResult?.deployment?.id ||
+        `deployment-${Date.now()}`
+
+      const actualStatus =
+        deploymentResult?.result?.status ||
+        deploymentResult?.status ||
+        'deploying'
+
+      // Store deployment ID and show real-time status
+      setCurrentDeploymentId(deploymentId)
+      setShowRealTimeStatus(true)
+
+      // Set status based on actual deployment status
+      if (actualStatus === 'completed') {
+        setDeploymentStatus('success')
+        setDeploymentStep('complete')
+      } else {
+        setDeploymentStatus('deploying')
+        setDeploymentStep('deploy')
+      }
+
+      // Store the full deployment result for later use
+      setDeploymentResult(deploymentResult)
     } catch (error) {
       console.error('Deployment failed:', error)
       setDeploymentStatus('error')
-
-      // Show user-friendly error message
-      const errorMessage =
-        error instanceof Error ? error.message : 'Unknown deployment error'
-
-      // Handle authentication errors specially
-      if (errorMessage.includes('GitHub authentication')) {
-        alert(
-          `${errorMessage}\n\nYou will be redirected to the GitHub connection page.`
-        )
-        setShowPlanPreview(false)
-        setCurrentStep(1) // Redirect to GitHub connection step
-      } else {
-        alert(`Deployment failed: ${errorMessage}`)
-      }
+      alert(
+        `Deployment failed: ${
+          error instanceof Error ? error.message : 'Unknown error'
+        }`
+      )
     } finally {
       setIsDeploying(false)
     }
@@ -575,19 +600,28 @@ export default function Home() {
                 </p>
               </div>
             </div>
-            <div
-              className={`flex items-center space-x-2 text-sm ${
-                mcpConnected
-                  ? 'text-green-600 dark:text-green-400'
-                  : 'text-red-600 dark:text-red-400'
-              }`}
-            >
-              <Server className="h-4 w-4" />
-              <span>
-                {mcpConnected
-                  ? 'MCP Server Connected'
-                  : 'MCP Server Disconnected'}
-              </span>
+            <div className="flex items-center space-x-4">
+              <button
+                onClick={() => setShowDeploymentStatus(true)}
+                className="flex items-center space-x-2 px-3 py-2 text-sm font-medium text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-lg transition-colors"
+              >
+                <Activity className="h-4 w-4" />
+                <span>View Deployment Status</span>
+              </button>
+              <div
+                className={`flex items-center space-x-2 text-sm ${
+                  mcpConnected
+                    ? 'text-green-600 dark:text-green-400'
+                    : 'text-red-600 dark:text-red-400'
+                }`}
+              >
+                <Server className="h-4 w-4" />
+                <span>
+                  {mcpConnected
+                    ? 'MCP Server Connected'
+                    : 'MCP Server Disconnected'}
+                </span>
+              </div>
             </div>
           </div>
         </div>
@@ -971,6 +1005,38 @@ export default function Home() {
             onCredentialsSubmit={handleAWSCredentialsSubmit}
             onCancel={handleAWSCredentialsCancel}
             isValidating={isValidatingCredentials}
+          />
+        )}
+
+        {/* Real-Time Deployment Status Modal */}
+        {showRealTimeStatus && currentDeploymentId && (
+          <RealTimeDeploymentStatus
+            deploymentId={currentDeploymentId}
+            repositoryName={selectedRepo || 'Unknown Repository'}
+            onClose={() => {
+              setShowRealTimeStatus(false)
+              setCurrentDeploymentId(null)
+              setDeploymentStep('select')
+            }}
+            onRetry={() => {
+              setShowRealTimeStatus(false)
+              setCurrentDeploymentId(null)
+              if (deploymentPlan) {
+                executeDeployment(deploymentPlan)
+              }
+            }}
+          />
+        )}
+
+        {/* Deployment Status Modal */}
+        {showDeploymentStatus && (
+          <RealTimeDeploymentStatus
+            deploymentId={currentDeploymentId || 'general'}
+            repositoryName="Deployment Status"
+            onClose={() => setShowDeploymentStatus(false)}
+            onRetry={() => {
+              setShowDeploymentStatus(false)
+            }}
           />
         )}
       </main>
