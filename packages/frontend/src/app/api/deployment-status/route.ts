@@ -1,8 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
 
-// In-memory storage for deployment status (in production, use Redis or a database)
-const deploymentStatusStore = new Map<string, any>()
-
 export async function POST(request: NextRequest) {
   try {
     const { deploymentId } = await request.json()
@@ -14,17 +11,46 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Get status from store or return default
-    const status = deploymentStatusStore.get(deploymentId) || {
-      deploymentId,
-      status: 'starting',
-      progress: 0,
-      currentStep: 'Initializing deployment...',
-      logs: ['🚀 Deployment initiated...'],
-      message: 'Starting deployment process...',
+    // Call MCP service to get real deployment status
+    const mcpResponse = await fetch(`${request.nextUrl.origin}/api/mcp`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        method: 'get_deployment_status',
+        params: { deploymentId },
+      }),
+    })
+
+    if (!mcpResponse.ok) {
+      throw new Error('Failed to get status from MCP service')
     }
 
-    return NextResponse.json(status)
+    const mcpData = await mcpResponse.json()
+
+    if (mcpData.error) {
+      throw new Error(mcpData.error.message || 'MCP service error')
+    }
+
+    const status = mcpData.result
+
+    // Transform MCP response to match component expectations
+    const transformedStatus = {
+      deploymentId: status.deploymentId,
+      status:
+        status.status === 'completed'
+          ? 'completed'
+          : status.status === 'error'
+          ? 'failed'
+          : 'in-progress',
+      progress: status.progress || 0,
+      currentStep: status.message || 'Processing...',
+      logs: status.logs || [],
+      message: status.message || 'Deployment in progress...',
+      elapsedTime: status.elapsedTime,
+      estimatedTimeRemaining: status.estimatedTimeRemaining,
+    }
+
+    return NextResponse.json(transformedStatus)
   } catch (error) {
     console.error('Deployment status error:', error)
     return NextResponse.json(
@@ -35,26 +61,4 @@ export async function POST(request: NextRequest) {
       { status: 500 }
     )
   }
-}
-
-// Helper function to update deployment status (called from deployment process)
-export function updateDeploymentStatus(
-  deploymentId: string,
-  statusUpdate: any
-) {
-  const currentStatus = deploymentStatusStore.get(deploymentId) || {
-    deploymentId,
-    status: 'starting',
-    progress: 0,
-    logs: [],
-  }
-
-  const updatedStatus = {
-    ...currentStatus,
-    ...statusUpdate,
-    lastUpdated: new Date().toISOString(),
-  }
-
-  deploymentStatusStore.set(deploymentId, updatedStatus)
-  return updatedStatus
 }
