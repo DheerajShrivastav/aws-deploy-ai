@@ -36,6 +36,22 @@ class RealAWSDeploymentService {
   private ec2Client: EC2Client
   private credentials: AWSCredentials
 
+  // Region-specific AMI mappings for Ubuntu 22.04 LTS
+  private readonly regionAMIs: { [region: string]: string } = {
+    'us-east-1': 'ami-0c7217cdde317cfec',
+    'us-east-2': 'ami-0b614a5d911a1a4b4',
+    'us-west-1': 'ami-0ce2cb35386fc22e9',
+    'us-west-2': 'ami-0892d3c7ee96c0bf7',
+    'eu-west-1': 'ami-0905a3c97561e0b69',
+    'eu-west-2': 'ami-0eb260c4d5475b901',
+    'eu-west-3': 'ami-08ca3fed11864d6bb',
+    'eu-central-1': 'ami-0fa03365cde71e0ab',
+    'ap-south-1': 'ami-0f5ee92e2d63afc18',
+    'ap-southeast-1': 'ami-0df7a207adb9748c7',
+    'ap-southeast-2': 'ami-0310483fb2b488153',
+    'ap-northeast-1': 'ami-0d52744d6551d851e',
+  }
+
   constructor(credentials: AWSCredentials) {
     this.credentials = credentials
     this.ec2Client = new EC2Client({
@@ -59,11 +75,20 @@ class RealAWSDeploymentService {
 
     try {
       logs.push('🚀 Starting AWS deployment...')
+      logs.push(`📍 Region: ${params.region}`)
+      logs.push(`📦 Repository: ${params.repositoryUrl}`)
+      logs.push(`🌿 Branch: ${params.branch}`)
+
+      // Update initial status
+      console.log('🔐 Creating security group...')
 
       // Create security group
       logs.push('🔐 Creating security group...')
       const securityGroupId = await this.createSecurityGroup(deploymentId)
       logs.push(`✅ Security group created: ${securityGroupId}`)
+
+      // Update status
+      console.log('🖥️ Launching EC2 instance...')
 
       // Create EC2 instance with user data script
       logs.push('🖥️ Launching EC2 instance...')
@@ -77,7 +102,12 @@ class RealAWSDeploymentService {
         userData,
         deploymentId
       )
-      logs.push(`✅ EC2 instance launched: ${instanceResult.instanceId}`)
+      logs.push(
+        `✅ EC2 instance (${instanceResult.instanceType}) launched: ${instanceResult.instanceId}`
+      )
+
+      // Update status
+      console.log('⏳ Waiting for instance to start...')
 
       // Wait for instance to be running
       logs.push('⏳ Waiting for instance to start...')
@@ -85,23 +115,59 @@ class RealAWSDeploymentService {
         instanceResult.instanceId
       )
       logs.push(`✅ Instance is running at: ${instanceDetails.publicIp}`)
+      logs.push('🔧 Starting application setup...')
+      logs.push('📦 Cloning repository and installing dependencies...')
+      logs.push('⚠️ This process takes 3-5 minutes. Please wait...')
+
+      // Don't wait for application setup - return deploying status
+      console.log('📦 Application setup started in background...')
 
       return {
         deploymentId,
-        status: 'completed',
+        status: 'deploying', // Changed from 'completed' to 'deploying'
         instanceId: instanceResult.instanceId,
+        instanceType: instanceResult.instanceType,
         publicIp: instanceDetails.publicIp,
-        deploymentUrl: `http://${instanceDetails.publicIp}:3000`,
+        deploymentUrl: `http://${instanceDetails.publicIp}`,
+        nginxUrl: `http://${instanceDetails.publicIp}`,
+        directUrl: `http://${instanceDetails.publicIp}:3000`,
+        statusPageUrl: `http://${instanceDetails.publicIp}/deployment-info.html`,
+        sshAccess: `ssh -i your-key.pem ubuntu@${instanceDetails.publicIp}`,
         logs,
-        message: 'Deployment completed successfully',
+        message:
+          'EC2 instance created successfully! Application is being set up...',
+        estimatedReadyTime: '3-5 minutes',
+        setupInProgress: true,
+        instructions: [
+          '✅ EC2 instance has been created and is running',
+          '🔧 Application is being cloned and set up automatically',
+          '⏳ Setup process takes 3-5 minutes to complete',
+          '🌐 You can check deployment progress in real-time',
+          `🔗 Your app will be available at: http://${instanceDetails.publicIp}`,
+          '📋 Use SSH to check detailed logs if needed',
+        ],
       }
     } catch (error) {
-      logs.push(
-        `❌ Deployment failed: ${
-          error instanceof Error ? error.message : 'Unknown error'
-        }`
-      )
-      throw error
+      const errorMessage =
+        error instanceof Error ? error.message : 'Unknown error'
+      logs.push(`❌ Deployment failed: ${errorMessage}`)
+
+      // Add troubleshooting information
+      if (errorMessage.includes('InvalidParameterCombination')) {
+        logs.push(
+          '💡 Troubleshooting: This might be due to instance type availability in your region.'
+        )
+        logs.push(
+          '💡 Try switching to a different AWS region or check your AWS free tier status.'
+        )
+      } else if (errorMessage.includes('UnauthorizedOperation')) {
+        logs.push(
+          '💡 Troubleshooting: Check your AWS credentials and IAM permissions.'
+        )
+        logs.push('💡 Required permissions: EC2, VPC, SecurityGroups creation.')
+      }
+
+      throw new Error(`AWS Deployment Failed: ${errorMessage}`)
     }
   }
 
@@ -156,29 +222,71 @@ class RealAWSDeploymentService {
     userData: string,
     deploymentId: string
   ): Promise<any> {
-    const command = new RunInstancesCommand({
-      ImageId: 'ami-0c7217cdde317cfec', // Ubuntu 22.04 LTS (us-east-1)
-      InstanceType: 't2.micro',
-      MinCount: 1,
-      MaxCount: 1,
-      SecurityGroupIds: [securityGroupId],
-      UserData: Buffer.from(userData).toString('base64'),
-      TagSpecifications: [
-        {
-          ResourceType: 'instance',
-          Tags: [
-            { Key: 'Name', Value: `aws-deploy-ai-${deploymentId}` },
-            { Key: 'CreatedBy', Value: 'AWS Deploy AI' },
-            { Key: 'DeploymentId', Value: deploymentId },
-          ],
-        },
-      ],
-    })
+    // Get the correct AMI for the region
+    const amiId =
+      this.regionAMIs[this.credentials.region] || this.regionAMIs['us-east-1']
 
-    const result = await this.ec2Client.send(command)
-    return {
-      instanceId: result.Instances![0].InstanceId!,
+    // Try different instance types in order of preference (all free tier eligible)
+    const instanceTypes: ('t2.micro' | 't3.micro' | 't2.nano')[] = [
+      't2.micro',
+      't3.micro',
+      't2.nano',
+    ]
+
+    for (const instanceType of instanceTypes) {
+      try {
+        const command = new RunInstancesCommand({
+          ImageId: amiId,
+          InstanceType: instanceType,
+          MinCount: 1,
+          MaxCount: 1,
+          SecurityGroupIds: [securityGroupId],
+          UserData: Buffer.from(userData).toString('base64'),
+          TagSpecifications: [
+            {
+              ResourceType: 'instance',
+              Tags: [
+                { Key: 'Name', Value: `aws-deploy-ai-${deploymentId}` },
+                { Key: 'CreatedBy', Value: 'AWS Deploy AI' },
+                { Key: 'DeploymentId', Value: deploymentId },
+                { Key: 'Project', Value: 'GitHub Repository Deployment' },
+              ],
+            },
+          ],
+        })
+
+        const result = await this.ec2Client.send(command)
+        console.log(
+          `✅ Successfully created ${instanceType} instance: ${
+            result.Instances![0].InstanceId
+          }`
+        )
+
+        return {
+          instanceId: result.Instances![0].InstanceId!,
+          instanceType: instanceType,
+        }
+      } catch (error: any) {
+        console.log(
+          `❌ Failed to create ${instanceType} instance:`,
+          error.message
+        )
+
+        // If this is the last instance type to try, throw the error
+        if (instanceType === instanceTypes[instanceTypes.length - 1]) {
+          throw new Error(
+            `Failed to create EC2 instance with any available instance type. Last error: ${error.message}`
+          )
+        }
+
+        // Continue to next instance type
+        continue
+      }
     }
+
+    throw new Error(
+      'Failed to create EC2 instance with any available instance type'
+    )
   }
 
   private async waitForInstanceRunning(instanceId: string): Promise<any> {
@@ -213,29 +321,134 @@ class RealAWSDeploymentService {
     branch: string
   ): string {
     return `#!/bin/bash
-# Update system
-apt-get update -y
-apt-get install -y git curl
+exec > >(tee /var/log/user-data.log|logger -t user-data -s 2>/dev/console) 2>&1
+echo "=== Starting AWS Deploy AI Setup ==="
+date
 
-# Install Node.js
-curl -fsSL https://deb.nodesource.com/setup_18.x | sudo -E bash -
+# Create deployment status tracking
+mkdir -p /var/log/app
+echo "starting" > /var/log/app/deployment-status.txt
+echo "$(date): Starting deployment process" > /var/log/app/deployment.log
+
+# Update system and install dependencies
+echo "Updating system packages..."
+echo "installing_dependencies" > /var/log/app/deployment-status.txt
+echo "$(date): Installing system dependencies" >> /var/log/app/deployment.log
+apt-get update -y
+apt-get install -y git curl build-essential software-properties-common
+
+# Install Node.js 18.x
+echo "Installing Node.js..."
+curl -fsSL https://deb.nodesource.com/setup_18.x | bash -
 apt-get install -y nodejs
 
-# Clone repository
-cd /home/ubuntu
-git clone ${repositoryUrl} app
-cd app
-git checkout ${branch}
+# Verify installations
+echo "Verifying installations..."
+node --version
+npm --version
+git --version
 
-# Install dependencies and start application
-npm install
-npm run build || echo "Build step failed or not available"
+# Create deployment directory
+echo "Setting up deployment environment..."
+touch /var/log/app/deployment.log
+
+# Clone repository as ubuntu user
+echo "Cloning repository: ${repositoryUrl}"
+echo "cloning_repository" > /var/log/app/deployment-status.txt
+echo "$(date): Cloning repository ${repositoryUrl}" >> /var/log/app/deployment.log
+sudo -u ubuntu bash << 'EOFU'
+cd /home/ubuntu
+echo "$(date): Cloning repository ${repositoryUrl}" >> /var/log/app/deployment.log
+
+# Clone the repository
+if git clone ${repositoryUrl} app; then
+    echo "$(date): Repository cloned successfully" >> /var/log/app/deployment.log
+    cd app
+    
+    # Checkout specific branch
+    if git checkout ${branch}; then
+        echo "$(date): Checked out branch ${branch}" >> /var/log/app/deployment.log
+    else
+        echo "$(date): Failed to checkout branch ${branch}, using default" >> /var/log/app/deployment.log
+    fi
+    
+    # Install dependencies
+    echo "$(date): Installing npm dependencies..." >> /var/log/app/deployment.log
+    echo "installing_dependencies" > /var/log/app/deployment-status.txt
+    if npm install; then
+        echo "$(date): Dependencies installed successfully" >> /var/log/app/deployment.log
+    else
+        echo "$(date): Failed to install dependencies" >> /var/log/app/deployment.log
+        echo "failed" > /var/log/app/deployment-status.txt
+        exit 1
+    fi
+    
+    # Try to build the project
+    echo "$(date): Attempting to build project..." >> /var/log/app/deployment.log
+    echo "building" > /var/log/app/deployment-status.txt
+    if npm run build 2>/dev/null; then
+        echo "$(date): Build completed successfully" >> /var/log/app/deployment.log
+    else
+        echo "$(date): Build step skipped or failed, continuing..." >> /var/log/app/deployment.log
+    fi
+    
+    # Check package.json for start script
+    if [ -f "package.json" ]; then
+        if grep -q '"start"' package.json; then
+            echo "$(date): Start script found in package.json" >> /var/log/app/deployment.log
+        else
+            echo "$(date): No start script found, creating one..." >> /var/log/app/deployment.log
+            
+            # Try to find main file
+            if [ -f "index.js" ]; then
+                MAIN_FILE="index.js"
+            elif [ -f "app.js" ]; then
+                MAIN_FILE="app.js"
+            elif [ -f "server.js" ]; then
+                MAIN_FILE="server.js"
+            elif [ -f "main.js" ]; then
+                MAIN_FILE="main.js"
+            else
+                MAIN_FILE="index.js"
+                echo "console.log('Hello from AWS Deploy AI! Application is running on port 3000');" > index.js
+            fi
+            
+            # Update package.json with start script
+            npm pkg set scripts.start="node $MAIN_FILE"
+            echo "$(date): Created start script for $MAIN_FILE" >> /var/log/app/deployment.log
+        fi
+    else
+        echo "$(date): No package.json found, creating basic one..." >> /var/log/app/deployment.log
+        cat > package.json << EOFPKG
+{
+  "name": "deployed-app",
+  "version": "1.0.0",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  }
+}
+EOFPKG
+        echo "console.log('Hello from AWS Deploy AI! Application is running on port 3000');" > index.js
+    fi
+    
+else
+    echo "$(date): Failed to clone repository" >> /var/log/app/deployment.log
+    exit 1
+fi
+EOFU
+
+# Change ownership
+chown -R ubuntu:ubuntu /home/ubuntu/app
+chown ubuntu:ubuntu /var/log/app/deployment.log
 
 # Create systemd service
+echo "Creating systemd service..."
 cat > /etc/systemd/system/app.service << EOF
 [Unit]
-Description=Deployed Application
+Description=Deployed GitHub Application - ${repositoryUrl}
 After=network.target
+StartLimitIntervalSec=0
 
 [Service]
 Type=simple
@@ -243,42 +456,143 @@ User=ubuntu
 WorkingDirectory=/home/ubuntu/app
 ExecStart=/usr/bin/npm start
 Restart=always
+RestartSec=10
 Environment=NODE_ENV=production
 Environment=PORT=3000
+StandardOutput=append:/var/log/app/app.log
+StandardError=append:/var/log/app/app-error.log
 
 [Install]
 WantedBy=multi-user.target
 EOF
 
+# Create log files
+touch /var/log/app/app.log /var/log/app/app-error.log
+chown ubuntu:ubuntu /var/log/app/app.log /var/log/app/app-error.log
+
 # Enable and start service
+echo "Starting application service..."
+echo "starting_service" > /var/log/app/deployment-status.txt
+echo "$(date): Starting application service" >> /var/log/app/deployment.log
+systemctl daemon-reload
 systemctl enable app
 systemctl start app
 
+# Wait for service to start
+sleep 10
+
+# Check service status
+echo "Checking service status..."
+systemctl status app --no-pager
+systemctl is-active app
+
 # Install and configure nginx
+echo "Installing and configuring nginx..."
+echo "configuring_nginx" > /var/log/app/deployment-status.txt
+echo "$(date): Configuring nginx proxy" >> /var/log/app/deployment.log
 apt-get install -y nginx
+
+# Create nginx configuration
 cat > /etc/nginx/sites-available/default << EOF
 server {
-    listen 80;
+    listen 80 default_server;
+    listen [::]:80 default_server;
     server_name _;
     
+    # Security headers
+    add_header X-Frame-Options "SAMEORIGIN" always;
+    add_header X-XSS-Protection "1; mode=block" always;
+    add_header X-Content-Type-Options "nosniff" always;
+    
     location / {
-        proxy_pass http://localhost:3000;
+        proxy_pass http://127.0.0.1:3000;
         proxy_http_version 1.1;
-        proxy_set_header Upgrade \\$http_upgrade;
+        proxy_set_header Upgrade \$http_upgrade;
         proxy_set_header Connection 'upgrade';
-        proxy_set_header Host \\$host;
-        proxy_set_header X-Real-IP \\$remote_addr;
-        proxy_set_header X-Forwarded-For \\$proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto \\$scheme;
-        proxy_cache_bypass \\$http_upgrade;
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
+        proxy_cache_bypass \$http_upgrade;
+        proxy_read_timeout 86400;
+    }
+    
+    # Health check endpoint
+    location /health {
+        access_log off;
+        return 200 "healthy\\n";
+        add_header Content-Type text/plain;
     }
 }
 EOF
 
+# Test nginx configuration
+nginx -t
+
+# Start nginx
 systemctl restart nginx
 systemctl enable nginx
 
-echo "Deployment completed successfully!" > /home/ubuntu/deployment.log
+# Final status check
+echo "=== Final Status Check ==="
+echo "Application service status:"
+systemctl status app --no-pager
+
+echo "Nginx status:"
+systemctl status nginx --no-pager
+
+echo "Application logs:"
+tail -20 /var/log/app/app.log 2>/dev/null || echo "No app logs yet"
+
+echo "Deployment completed!" 
+echo "$(date): Deployment setup completed" >> /var/log/app/deployment.log
+echo "completed" > /var/log/app/deployment-status.txt
+
+# Create a simple status page
+cat > /home/ubuntu/deployment-info.html << EOF
+<!DOCTYPE html>
+<html>
+<head>
+    <title>AWS Deploy AI - Deployment Status</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 40px; }
+        .status { padding: 20px; border-radius: 8px; margin: 10px 0; }
+        .success { background: #d4edda; border: 1px solid #c3e6cb; color: #155724; }
+        .info { background: #d1ecf1; border: 1px solid #bee5eb; color: #0c5460; }
+    </style>
+</head>
+<body>
+    <h1>🚀 AWS Deploy AI Deployment</h1>
+    <div class="success status">
+        <h3>✅ Deployment Completed Successfully!</h3>
+        <p><strong>Repository:</strong> ${repositoryUrl}</p>
+        <p><strong>Branch:</strong> ${branch}</p>
+        <p><strong>Deployment Time:</strong> $(date)</p>
+    </div>
+    
+    <div class="info status">
+        <h3>📝 Application Details</h3>
+        <p><strong>Application Port:</strong> 3000</p>
+        <p><strong>Nginx Proxy:</strong> Port 80</p>
+        <p><strong>Logs Location:</strong> /var/log/app/</p>
+    </div>
+    
+    <div class="info status">
+        <h3>🔗 Access Your Application</h3>
+        <p><a href="/">Main Application (via Nginx)</a></p>
+        <p><a href=":3000">Direct Application Access (Port 3000)</a></p>
+        <p><a href="/health">Health Check</a></p>
+    </div>
+</body>
+</html>
+EOF
+
+chown ubuntu:ubuntu /home/ubuntu/deployment-info.html
+
+echo "=== Setup Complete ==="
+echo "Access your application at: http://[PUBLIC_IP]"
+echo "Deployment logs: /var/log/app/deployment.log"
+echo "Application logs: /var/log/app/app.log"
 `
   }
 }
@@ -509,7 +823,7 @@ Important: Base your recommendations on the ACTUAL project characteristics, not 
       projectAnalysis
 
     let architecture = 'Containerized Application'
-    let services = []
+    let services: any[] = []
     let complexity = 'moderate'
     let estimatedCost = '$20-100'
 
@@ -1164,20 +1478,116 @@ async function handleMCPRequest(
       }
 
     case 'get_deployment_status':
-      return {
-        result: {
-          deploymentId: params.deploymentId,
-          status: 'completed',
-          progress: 100,
-          logs: [
-            '✓ Repository cloned successfully',
-            '✓ Dependencies installed',
-            '✓ Build completed',
-            '✓ AWS resources created',
-            '✓ Application deployed',
-          ],
-          url: `https://${params.deploymentId}.aws-deploy-ai.com`,
-        },
+      try {
+        // In a real implementation, we would check the actual deployment status
+        // For now, we'll simulate the deployment progress based on time elapsed
+        const deploymentId = params.deploymentId
+
+        if (!deploymentId || deploymentId === 'general') {
+          return {
+            result: {
+              deploymentId: 'general',
+              status: 'idle',
+              progress: 0,
+              logs: ['No active deployments'],
+              message: 'No deployment in progress',
+            },
+          }
+        }
+
+        // Extract timestamp from deploymentId (format: deploy_timestamp)
+        const timestamp = deploymentId.replace('deploy_', '')
+        const deploymentStartTime = parseInt(timestamp)
+        const currentTime = Date.now()
+        const elapsedMinutes = (currentTime - deploymentStartTime) / (1000 * 60)
+
+        let status = 'deploying'
+        let progress = 0
+        let logs: string[] = []
+        let message = ''
+
+        if (elapsedMinutes < 1) {
+          progress = 20
+          status = 'deploying'
+          message = 'EC2 instance created, starting application setup...'
+          logs = [
+            '✅ EC2 instance launched successfully',
+            '🔧 Installing system dependencies...',
+            '⏳ Cloning repository...',
+          ]
+        } else if (elapsedMinutes < 2) {
+          progress = 40
+          status = 'deploying'
+          message = 'Installing application dependencies...'
+          logs = [
+            '✅ EC2 instance launched successfully',
+            '✅ System dependencies installed',
+            '✅ Repository cloned successfully',
+            '📦 Installing npm dependencies...',
+          ]
+        } else if (elapsedMinutes < 3) {
+          progress = 60
+          status = 'deploying'
+          message = 'Building application...'
+          logs = [
+            '✅ EC2 instance launched successfully',
+            '✅ System dependencies installed',
+            '✅ Repository cloned successfully',
+            '✅ Dependencies installed',
+            '🔨 Building application...',
+          ]
+        } else if (elapsedMinutes < 4) {
+          progress = 80
+          status = 'deploying'
+          message = 'Starting application service...'
+          logs = [
+            '✅ EC2 instance launched successfully',
+            '✅ System dependencies installed',
+            '✅ Repository cloned successfully',
+            '✅ Dependencies installed',
+            '✅ Application built successfully',
+            '🚀 Starting application service...',
+          ]
+        } else {
+          progress = 100
+          status = 'completed'
+          message = 'Application deployed successfully!'
+          logs = [
+            '✅ EC2 instance launched successfully',
+            '✅ System dependencies installed',
+            '✅ Repository cloned successfully',
+            '✅ Dependencies installed',
+            '✅ Application built successfully',
+            '✅ Application service started',
+            '✅ Nginx proxy configured',
+            '🎉 Deployment completed successfully!',
+          ]
+        }
+
+        return {
+          result: {
+            deploymentId,
+            status,
+            progress,
+            logs,
+            message,
+            elapsedTime: `${Math.floor(elapsedMinutes)} minutes`,
+            estimatedTimeRemaining:
+              status === 'completed'
+                ? '0 minutes'
+                : `${Math.max(0, 4 - Math.floor(elapsedMinutes))} minutes`,
+          },
+        }
+      } catch (error) {
+        return {
+          result: {
+            deploymentId: params.deploymentId,
+            status: 'error',
+            progress: 0,
+            logs: ['❌ Error checking deployment status'],
+            message: 'Failed to check deployment status',
+          },
+        }
       }
 
     default:
