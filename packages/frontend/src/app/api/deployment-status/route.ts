@@ -48,6 +48,19 @@ export async function POST(request: NextRequest) {
       message: status.message || 'Deployment in progress...',
       elapsedTime: status.elapsedTime,
       estimatedTimeRemaining: status.estimatedTimeRemaining,
+      // Include all URL and access information
+      instanceId: status.instanceId,
+      instanceType: status.instanceType,
+      publicIp: status.publicIp,
+      deploymentUrl: status.deploymentUrl,
+      liveUrl: status.liveUrl,
+      nginxUrl: status.nginxUrl,
+      directUrl: status.directUrl,
+      statusPageUrl: status.statusPageUrl,
+      sshAccess: status.sshAccess,
+      applicationReady: status.applicationReady,
+      estimatedReadyTime: status.estimatedReadyTime,
+      instructions: status.instructions,
     }
 
     return NextResponse.json(transformedStatus)
