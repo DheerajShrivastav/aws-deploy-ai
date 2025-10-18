@@ -422,54 +422,47 @@ class RealAWSDeploymentService {
   ): string {
     return `#!/bin/bash
 exec > >(tee /var/log/user-data.log|logger -t user-data -s 2>/dev/console) 2>&1
-echo "=== Starting AWS Deploy AI Setup ==="
+echo "=== AWS Deploy AI Setup Started ==="
 date
 
-# Create deployment status tracking
+# Create deployment tracking
 mkdir -p /var/log/app
 echo "starting" > /var/log/app/deployment-status.txt
 echo "$(date): Starting deployment process" > /var/log/app/deployment.log
 
-# Update system and install dependencies
-echo "Updating system packages..."
-echo "installing_dependencies" > /var/log/app/deployment-status.txt
-echo "$(date): Installing system dependencies" >> /var/log/app/deployment.log
+# Update and install essentials
+echo "Installing system dependencies..."
 apt-get update -y
-apt-get install -y git curl build-essential software-properties-common
+apt-get install -y git curl build-essential nginx
 
-# Install Node.js 18.x
-echo "Installing Node.js..."
+# Install Node.js 18
+echo "Installing Node.js 18..."
 curl -fsSL https://deb.nodesource.com/setup_18.x | bash -
 apt-get install -y nodejs
 
 # Install global packages
-echo "Installing global npm packages..."
+echo "Installing PM2 and serve globally..."
 npm install -g pm2 serve
 
 # Verify installations
 echo "Verifying installations..."
-node --version
-npm --version
-git --version
-pm2 --version
-serve --version
+node --version >> /var/log/app/deployment.log
+npm --version >> /var/log/app/deployment.log
+pm2 --version >> /var/log/app/deployment.log
+serve --version >> /var/log/app/deployment.log
+which serve >> /var/log/app/deployment.log
 
-echo "Global packages installed:"
-npm list -g --depth=0
+# Test serve command
+echo "Testing serve command..." >> /var/log/app/deployment.log
+serve --help | head -5 >> /var/log/app/deployment.log 2>&1
 
-# Create deployment directory
-echo "Setting up deployment environment..."
-touch /var/log/app/deployment.log
-
-# Clone repository as ubuntu user
-echo "Cloning repository: ${repositoryUrl}"
-echo "cloning_repository" > /var/log/app/deployment-status.txt
-echo "$(date): Cloning repository ${repositoryUrl}" >> /var/log/app/deployment.log
+# Clone and setup as ubuntu user
+echo "Setting up application..."
 sudo -u ubuntu bash << 'EOFU'
 cd /home/ubuntu
 echo "$(date): Cloning repository ${repositoryUrl}" >> /var/log/app/deployment.log
 
-# Clone the repository
+# Clone repository
 if git clone ${repositoryUrl} app; then
     echo "$(date): Repository cloned successfully" >> /var/log/app/deployment.log
     cd app
@@ -478,12 +471,12 @@ if git clone ${repositoryUrl} app; then
     if git checkout ${branch}; then
         echo "$(date): Checked out branch ${branch}" >> /var/log/app/deployment.log
     else
-        echo "$(date): Failed to checkout branch ${branch}, using default" >> /var/log/app/deployment.log
+        echo "$(date): Using default branch" >> /var/log/app/deployment.log
     fi
     
     # Install dependencies
-    echo "$(date): Installing npm dependencies..." >> /var/log/app/deployment.log
-    echo "installing_dependencies" > /var/log/app/deployment-status.txt
+    echo "$(date): Installing dependencies..." >> /var/log/app/deployment.log
+    echo "installing" > /var/log/app/deployment-status.txt
     if npm install; then
         echo "$(date): Dependencies installed successfully" >> /var/log/app/deployment.log
     else
@@ -492,351 +485,205 @@ if git clone ${repositoryUrl} app; then
         exit 1
     fi
     
-    # Install PM2 globally for better process management (already installed globally above)
-    echo "$(date): PM2 and serve already installed globally" >> /var/log/app/deployment.log
+    echo "building" > /var/log/app/deployment-status.txt
+    echo "$(date): Detecting project type and building..." >> /var/log/app/deployment.log
     
-    # Detect app type and set up accordingly
-    echo "$(date): Detecting application type..." >> /var/log/app/deployment.log
-    APP_TYPE="unknown"
-    START_COMMAND="npm start"
-    BUILD_NEEDED=false
-    
-    if [ -f "package.json" ]; then
-        # Check if it's a Vite app
-        if [ -f "vite.config.js" ] || [ -f "vite.config.ts" ] || grep -q '"vite"' package.json; then
-            APP_TYPE="vite-spa"
-            BUILD_NEEDED=true
-            START_COMMAND="serve -s dist -l 3000"
-            echo "$(date): Detected Vite application" >> /var/log/app/deployment.log
-        # Check if it's a Next.js app
-        elif grep -q '"next"' package.json; then
-            APP_TYPE="nextjs"
-            BUILD_NEEDED=true
-            START_COMMAND="npm start"
-            echo "$(date): Detected Next.js application" >> /var/log/app/deployment.log
-        # Check if it's a React app (CRA)
-        elif grep -q '"react-scripts"' package.json; then
-            APP_TYPE="create-react-app"
-            BUILD_NEEDED=true
-            START_COMMAND="serve -s build -l 3000"
-            echo "$(date): Detected Create React App" >> /var/log/app/deployment.log
-        # Check if it's a regular React app
-        elif grep -q '"react"' package.json; then
-            if grep -q '"build"' package.json; then
-                APP_TYPE="react-spa"
-                BUILD_NEEDED=true
-                # Check if build output goes to dist or build
-                if [ -f "vite.config.js" ] || [ -f "vite.config.ts" ]; then
-                    START_COMMAND="serve -s dist -l 3000"
-                else
-                    START_COMMAND="serve -s build -l 3000"
-                fi
-                echo "$(date): Detected React SPA" >> /var/log/app/deployment.log
-            else
-                APP_TYPE="react-dev"
-                START_COMMAND="npm start"
-                echo "$(date): Detected React development app" >> /var/log/app/deployment.log
-            fi
-        # Check if it's a Node.js/Express app
-        elif grep -q '"express"' package.json || grep -q '"start"' package.json; then
-            APP_TYPE="nodejs"
-            START_COMMAND="npm start"
-            echo "$(date): Detected Node.js application" >> /var/log/app/deployment.log
-        fi
-    fi
-    
-    # Build the project if needed
-    if [ "$BUILD_NEEDED" = true ]; then
-        echo "$(date): Building production version..." >> /var/log/app/deployment.log
-        echo "building" > /var/log/app/deployment-status.txt
+    # Detect and build project with better error handling
+    if [ -f "vite.config.js" ] || [ -f "vite.config.ts" ]; then
+        echo "$(date): Detected Vite project" >> /var/log/app/deployment.log
         if npm run build; then
-            echo "$(date): Build completed successfully" >> /var/log/app/deployment.log
-            
-            # Verify build output exists
-            if [ "$APP_TYPE" = "vite-spa" ] && [ -d "dist" ]; then
-                echo "$(date): Vite build successful, dist folder created" >> /var/log/app/deployment.log
-            elif [ "$APP_TYPE" = "create-react-app" ] && [ -d "build" ]; then
-                echo "$(date): Create React App build successful, build folder created" >> /var/log/app/deployment.log
-            elif [ "$APP_TYPE" = "react-spa" ]; then
-                if [ -d "dist" ]; then
-                    START_COMMAND="serve -s dist -l 3000"
-                    echo "$(date): React build successful, using dist folder" >> /var/log/app/deployment.log
-                elif [ -d "build" ]; then
-                    START_COMMAND="serve -s build -l 3000"
-                    echo "$(date): React build successful, using build folder" >> /var/log/app/deployment.log
-                fi
+            echo "$(date): Vite build successful" >> /var/log/app/deployment.log
+            # Start with serve for Vite projects - use proper command format
+            export PORT=3000
+            export NODE_ENV=production
+            # Start serve with full path and working directory
+            pm2 start "serve -s ./dist -p 3000" --name "app" --cwd "/home/ubuntu/app"
+            echo "$(date): Started Vite app with serve on port 3000" >> /var/log/app/deployment.log
+        else
+            echo "$(date): Vite build failed, trying dev server" >> /var/log/app/deployment.log
+            export PORT=3000
+            pm2 start "npm run dev" --name "app"
+        fi
+    elif grep -q '"next"' package.json 2>/dev/null; then
+        echo "$(date): Detected Next.js project" >> /var/log/app/deployment.log
+        if npm run build; then
+            echo "$(date): Next.js build successful" >> /var/log/app/deployment.log
+            export PORT=3000
+            pm2 start "npm start" --name "app"
+        else
+            echo "$(date): Next.js build failed, trying dev server" >> /var/log/app/deployment.log
+            export PORT=3000
+            pm2 start "npm run dev" --name "app"
+        fi
+    elif grep -q '"build"' package.json 2>/dev/null; then
+        echo "$(date): Detected project with build script" >> /var/log/app/deployment.log
+        if npm run build; then
+            echo "$(date): Build successful" >> /var/log/app/deployment.log
+            export PORT=3000
+            export NODE_ENV=production
+            if [ -d "build" ]; then
+                pm2 start "serve -s ./build -p 3000" --name "app" --cwd "/home/ubuntu/app"
+                echo "$(date): Started app with serve from build directory" >> /var/log/app/deployment.log
+            elif [ -d "dist" ]; then
+                pm2 start "serve -s ./dist -p 3000" --name "app" --cwd "/home/ubuntu/app"
+                echo "$(date): Started app with serve from dist directory" >> /var/log/app/deployment.log
+            else
+                pm2 start "npm start" --name "app"
+                echo "$(date): Started app with npm start" >> /var/log/app/deployment.log
             fi
         else
-            echo "$(date): Build failed, falling back to development mode" >> /var/log/app/deployment.log
-            START_COMMAND="npm start"
-        fi
-    fi
-    
-    # Ensure start script exists
-    if [ -f "package.json" ]; then
-        if ! grep -q '"start"' package.json && [ "$START_COMMAND" = "npm start" ]; then
-            echo "$(date): No start script found, creating one..." >> /var/log/app/deployment.log
-            
-            # Try to find main file
-            if [ -f "index.js" ]; then
-                MAIN_FILE="index.js"
-            elif [ -f "app.js" ]; then
-                MAIN_FILE="app.js"
-            elif [ -f "server.js" ]; then
-                MAIN_FILE="server.js"
-            elif [ -f "main.js" ]; then
-                MAIN_FILE="main.js"
-            else
-                MAIN_FILE="index.js"
-                cat > index.js << EOFJS
-const http = require('http');
-const port = process.env.PORT || 3000;
-
-const server = http.createServer((req, res) => {
-  res.writeHead(200, { 'Content-Type': 'text/html' });
-  res.end(\`
-<!DOCTYPE html>
-<html>
-<head><title>AWS Deploy AI</title></head>
-<body>
-  <h1>🚀 Your app is live on AWS!</h1>
-  <p>Deployed via AWS Deploy AI MCP Server</p>
-  <p>Port: \${port}</p>
-  <p>Time: \${new Date()}</p>
-</body>
-</html>
-\`);
-});
-
-server.listen(port, () => {
-  console.log(\`Server running on port \${port}\`);
-});
-EOFJS
-            fi
-            
-            # Update package.json with start script
-            npm pkg set scripts.start="node $MAIN_FILE"
-            echo "$(date): Created start script for $MAIN_FILE" >> /var/log/app/deployment.log
+            echo "$(date): Build failed, trying npm start" >> /var/log/app/deployment.log
+            export PORT=3000
+            pm2 start "npm start" --name "app"
         fi
     else
-        echo "$(date): No package.json found, creating basic Node.js app..." >> /var/log/app/deployment.log
-        cat > package.json << EOFPKG
-{
-  "name": "deployed-app",
-  "version": "1.0.0",
-  "main": "index.js",
-  "scripts": {
-    "start": "node index.js"
-  }
-}
-EOFPKG
-        cat > index.js << EOFJS
-const http = require('http');
-const port = process.env.PORT || 3000;
-
-const server = http.createServer((req, res) => {
-  res.writeHead(200, { 'Content-Type': 'text/html' });
-  res.end(\`
-<!DOCTYPE html>
-<html>
-<head><title>AWS Deploy AI</title></head>
-<body>
-  <h1>🚀 Your app is live on AWS!</h1>
-  <p>Deployed via AWS Deploy AI MCP Server</p>
-  <p>Port: \${port}</p>
-  <p>Time: \${new Date()}</p>
-</body>
-</html>
-\`);
-});
-
-server.listen(port, () => {
-  console.log(\`Server running on port \${port}\`);
-});
-EOFJS
+        echo "$(date): No build script found, using npm start" >> /var/log/app/deployment.log
+        export PORT=3000
+        pm2 start "npm start" --name "app"
+    fi
+    
+    # Save PM2 configuration and setup startup
+    echo "$(date): Saving PM2 configuration..." >> /var/log/app/deployment.log
+    pm2 save
+    
+    # Setup PM2 startup script with correct syntax
+    echo "$(date): Setting up PM2 startup..." >> /var/log/app/deployment.log
+    pm2 startup systemd -u ubuntu --hp /home/ubuntu | tail -1 > /tmp/pm2_startup.sh
+    chmod +x /tmp/pm2_startup.sh
+    
+    # Check if PM2 app is running
+    sleep 10
+    echo "$(date): Checking PM2 status..." >> /var/log/app/deployment.log
+    pm2 list >> /var/log/app/deployment.log
+    pm2 info app >> /var/log/app/deployment.log 2>&1
+    
+    # If app is not running, try to restart it
+    if ! pm2 list | grep -q "online"; then
+        echo "$(date): App not running, attempting restart..." >> /var/log/app/deployment.log
+        pm2 restart app >> /var/log/app/deployment.log 2>&1
+        sleep 5
+        pm2 list >> /var/log/app/deployment.log
     fi
     
 else
     echo "$(date): Failed to clone repository" >> /var/log/app/deployment.log
+    echo "failed" > /var/log/app/deployment-status.txt
     exit 1
 fi
 EOFU
 
-# Change ownership
-chown -R ubuntu:ubuntu /home/ubuntu/app
-chown ubuntu:ubuntu /var/log/app/deployment.log
-
-# Create log files for PM2
-mkdir -p /var/log/app
-touch /var/log/app/app.log /var/log/app/app-error.log
-chown -R ubuntu:ubuntu /var/log/app
-
-# Start application with PM2
-echo "Starting application with PM2..."
-echo "starting_service" > /var/log/app/deployment-status.txt
-echo "$(date): Starting application with PM2" >> /var/log/app/deployment.log
-
-# Switch to ubuntu user and start with PM2
-sudo -u ubuntu bash << 'EOFPM2'
-cd /home/ubuntu/app
-export HOME=/home/ubuntu
-
-# Set environment variables
-export NODE_ENV=production
-export PORT=3000
-
-# Start with PM2
-echo "$(date): Starting app with PM2..." >> /var/log/app/deployment.log
-echo "App type detected: $APP_TYPE" >> /var/log/app/deployment.log
-
-# Use the determined start command based on app type
-if [ "$APP_TYPE" = "vite-spa" ]; then
-    # Vite app - use serve directly
-    echo "$(date): Starting Vite app with: pm2 start serve --name deployed-app -- -s dist -l 3000" >> /var/log/app/deployment.log
-    pm2 start serve --name "deployed-app" -- -s dist -l 3000
-    echo "$(date): Started Vite app with serve -s dist -l 3000" >> /var/log/app/deployment.log
-elif [ "$APP_TYPE" = "create-react-app" ]; then
-    # Create React App - use serve for build folder
-    echo "$(date): Starting CRA with: pm2 start serve --name deployed-app -- -s build -l 3000" >> /var/log/app/deployment.log
-    pm2 start serve --name "deployed-app" -- -s build -l 3000
-    echo "$(date): Started Create React App with serve -s build -l 3000" >> /var/log/app/deployment.log
-elif [ "$APP_TYPE" = "react-spa" ]; then
-    # Generic React SPA - use appropriate serve command
-    if [ -d "dist" ]; then
-        echo "$(date): Starting React SPA with: pm2 start serve --name deployed-app -- -s dist -l 3000" >> /var/log/app/deployment.log
-        pm2 start serve --name "deployed-app" -- -s dist -l 3000
-        echo "$(date): Started React SPA with serve -s dist -l 3000" >> /var/log/app/deployment.log
-    else
-        echo "$(date): Starting React SPA with: pm2 start serve --name deployed-app -- -s build -l 3000" >> /var/log/app/deployment.log
-        pm2 start serve --name "deployed-app" -- -s build -l 3000
-        echo "$(date): Started React SPA with serve -s build -l 3000" >> /var/log/app/deployment.log
-    fi
-elif [ "$APP_TYPE" = "nextjs" ]; then
-    # Next.js app
-    echo "$(date): Starting Next.js with: pm2 start npm --name deployed-app -- start" >> /var/log/app/deployment.log
-    pm2 start npm --name "deployed-app" -- start
-    echo "$(date): Started Next.js app with npm start" >> /var/log/app/deployment.log
-else
-    # Regular Node.js or fallback
-    echo "$(date): Starting with: pm2 start npm --name deployed-app -- start" >> /var/log/app/deployment.log
-    pm2 start npm --name "deployed-app" -- start
-    echo "$(date): Started app with npm start" >> /var/log/app/deployment.log
+# Execute the PM2 startup script with proper permissions
+if [ -f /tmp/pm2_startup.sh ]; then
+    echo "$(date): Executing PM2 startup script..." >> /var/log/app/deployment.log
+    sudo bash /tmp/pm2_startup.sh >> /var/log/app/deployment.log 2>&1
 fi
 
-# Show what's running
-echo "$(date): PM2 process list:" >> /var/log/app/deployment.log
-pm2 list >> /var/log/app/deployment.log 2>&1
+# Ensure PM2 is running as ubuntu user
+echo "$(date): Ensuring PM2 service is running..." >> /var/log/app/deployment.log
+sudo -u ubuntu pm2 resurrect >> /var/log/app/deployment.log 2>&1
 
-# Save PM2 process list
-pm2 save
-
-# Generate PM2 startup script
-pm2 startup | grep -E '^sudo' | bash
-
-echo "$(date): PM2 startup configured" >> /var/log/app/deployment.log
-EOFPM2
-
-# Wait for application to start
-echo "Waiting for application to initialize..."
+# Wait a moment for app to start
 sleep 15
 
-# Check if application is responding
-echo "Checking application health..."
-for i in {1..10}; do
-    if curl -f http://localhost:3000 >/dev/null 2>&1; then
-        echo "$(date): Application is responding on port 3000" >> /var/log/app/deployment.log
-        break
-    else
-        echo "$(date): Attempt $i: Application not ready yet..." >> /var/log/app/deployment.log
-        sleep 5
-    fi
-done
+# Multiple checks to ensure application is responding
+echo "$(date): Checking if application is responding..." >> /var/log/app/deployment.log
 
-# Check PM2 status
-echo "PM2 Status:"
-sudo -u ubuntu pm2 list
-sudo -u ubuntu pm2 info deployed-app 2>/dev/null || echo "PM2 app info not available yet"
+# Check if PM2 process is running
+sudo -u ubuntu pm2 list >> /var/log/app/deployment.log
 
-# Install and configure nginx
-echo "Installing and configuring nginx..."
-echo "configuring_nginx" > /var/log/app/deployment-status.txt
-echo "$(date): Configuring nginx proxy" >> /var/log/app/deployment.log
-apt-get install -y nginx
+# Check if port 3000 is listening
+if netstat -tuln | grep -q ":3000 "; then
+    echo "$(date): Port 3000 is listening" >> /var/log/app/deployment.log
+else
+    echo "$(date): Port 3000 is not listening, checking processes..." >> /var/log/app/deployment.log
+    ps aux | grep -E "(serve|node|npm)" >> /var/log/app/deployment.log
+fi
 
-# Create nginx configuration
-cat > /etc/nginx/sites-available/default << EOF
+# Try to restart PM2 app if not responding
+if ! curl -f http://localhost:3000 >/dev/null 2>&1; then
+    echo "$(date): Application not responding, attempting restart..." >> /var/log/app/deployment.log
+    sudo -u ubuntu pm2 restart app >> /var/log/app/deployment.log 2>&1
+    sleep 10
+    sudo -u ubuntu pm2 list >> /var/log/app/deployment.log
+    sudo -u ubuntu pm2 logs app --lines 20 >> /var/log/app/deployment.log 2>&1
+fi
+
+# Final application check
+if curl -f http://localhost:3000 >/dev/null 2>&1; then
+    echo "$(date): Application is responding on port 3000" >> /var/log/app/deployment.log
+else
+    echo "$(date): Application still not responding on port 3000" >> /var/log/app/deployment.log
+    # Try to start serve directly as fallback
+    sudo -u ubuntu bash -c "cd /home/ubuntu/app && nohup serve -s dist -p 3000 > /var/log/app/serve.log 2>&1 &" || true
+fi
+
+# Configure nginx
+echo "$(date): Configuring nginx..." >> /var/log/app/deployment.log
+cat > /etc/nginx/sites-available/default << 'EOF'
 server {
     listen 80 default_server;
     listen [::]:80 default_server;
     server_name _;
     
-    # Security headers
-    add_header X-Frame-Options "SAMEORIGIN" always;
-    add_header X-XSS-Protection "1; mode=block" always;
-    add_header X-Content-Type-Options "nosniff" always;
-    
     location / {
         proxy_pass http://127.0.0.1:3000;
         proxy_http_version 1.1;
-        proxy_set_header Upgrade \$http_upgrade;
+        proxy_set_header Upgrade $http_upgrade;
         proxy_set_header Connection 'upgrade';
-        proxy_set_header Host \$host;
-        proxy_set_header X-Real-IP \$remote_addr;
-        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto \$scheme;
-        proxy_cache_bypass \$http_upgrade;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_cache_bypass $http_upgrade;
         proxy_read_timeout 86400;
     }
     
-    # Health check endpoint
     location /health {
         access_log off;
         return 200 "healthy\\n";
         add_header Content-Type text/plain;
     }
     
-    # Deployment status endpoint
     location /deployment-status {
         access_log off;
         alias /var/log/app/deployment-status.txt;
         add_header Content-Type text/plain;
-        add_header Cache-Control "no-cache, no-store, must-revalidate";
     }
     
-    # Deployment logs endpoint
     location /deployment-logs {
         access_log off;
         alias /var/log/app/deployment.log;
         add_header Content-Type text/plain;
-        add_header Cache-Control "no-cache, no-store, must-revalidate";
     }
 }
 EOF
 
-# Test nginx configuration
+# Test and restart nginx
 nginx -t
+if [ $? -eq 0 ]; then
+    systemctl restart nginx
+    systemctl enable nginx
+    echo "$(date): Nginx configured and started successfully" >> /var/log/app/deployment.log
+else
+    echo "$(date): Nginx configuration test failed" >> /var/log/app/deployment.log
+fi
 
-# Start nginx
-systemctl restart nginx
-systemctl enable nginx
+# Final status checks
+echo "=== Final Status Check ===" >> /var/log/app/deployment.log
+echo "PM2 Status:" >> /var/log/app/deployment.log
+sudo -u ubuntu pm2 list >> /var/log/app/deployment.log
 
-# Final status check
-echo "=== Final Status Check ==="
-echo "Application service status:"
-systemctl status app --no-pager
+echo "Nginx Status:" >> /var/log/app/deployment.log
+systemctl status nginx --no-pager >> /var/log/app/deployment.log
 
-echo "Nginx status:"
-systemctl status nginx --no-pager
+echo "Application Response Test:" >> /var/log/app/deployment.log
+curl -I http://localhost:3000 >> /var/log/app/deployment.log 2>&1
 
-echo "Application logs:"
-tail -20 /var/log/app/app.log 2>/dev/null || echo "No app logs yet"
-
-echo "Deployment completed!" 
 echo "$(date): Deployment setup completed" >> /var/log/app/deployment.log
 echo "completed" > /var/log/app/deployment-status.txt
 
-# Create a simple status page
-cat > /home/ubuntu/deployment-info.html << EOF
+# Create deployment info page
+cat > /var/www/html/deployment-info.html << 'EOF'
 <!DOCTYPE html>
 <html>
 <head>
@@ -861,12 +708,12 @@ cat > /home/ubuntu/deployment-info.html << EOF
         <h3>📝 Application Details</h3>
         <p><strong>Application Port:</strong> 3000</p>
         <p><strong>Nginx Proxy:</strong> Port 80</p>
-        <p><strong>Logs Location:</strong> /var/log/app/</p>
+        <p><strong>Process Manager:</strong> PM2</p>
     </div>
     
     <div class="info status">
         <h3>🔗 Access Your Application</h3>
-        <p><a href="/">Main Application (via Nginx)</a></p>
+        <p><a href="/">Main Application (Port 80)</a></p>
         <p><a href=":3000">Direct Application Access (Port 3000)</a></p>
         <p><a href="/health">Health Check</a></p>
     </div>
@@ -874,12 +721,9 @@ cat > /home/ubuntu/deployment-info.html << EOF
 </html>
 EOF
 
-chown ubuntu:ubuntu /home/ubuntu/deployment-info.html
-
-echo "=== Setup Complete ==="
+echo "=== AWS Deploy AI Setup Completed ==="
 echo "Access your application at: http://[PUBLIC_IP]"
 echo "Deployment logs: /var/log/app/deployment.log"
-echo "Application logs: /var/log/app/app.log"
 `
   }
 }
