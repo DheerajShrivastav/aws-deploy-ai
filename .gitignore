@@ -12,7 +12,7 @@ pnpm-lock.yaml
 
 # TypeScript
 *.tsbuildinfo
-dist/
+
 build/
 out/
 *.d.ts.map
