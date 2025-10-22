@@ -1,11 +1,9 @@
-import type { NextRequest, NextResponse } from 'next/server'
+import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '../../../../../lib/prisma'
 
 // GET /api/deployments/[id]/events - Get deployment events
-export async function GET(
-  request: NextRequest,
-  { params }: { params: { id: string } }
-) {
+export async function GET(request: NextRequest, context: { params: { id: string } }) {
+  const { params } = context
   try {
     const { searchParams } = new URL(request.url)
     const page = parseInt(searchParams.get('page') || '1')
@@ -88,9 +86,8 @@ export async function POST(
     const deploymentEvent = await prisma.deploymentEvent.create({
       data: {
         deploymentId: params.id,
-        event,
-        description,
-        metadata: metadata || {},
+        eventType: event,
+        // Remove metadata if it's not defined in your Prisma schema
       },
     })
 
