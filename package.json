@@ -7,7 +7,7 @@
     "packages/*"
   ],
   "scripts": {
-    "build": "npm run build:mcp && npm run build:frontend",
+    "build": "cd packages/frontend && npm run build",
     "build:mcp": "cd packages/mcp-server && npm run build",
     "build:frontend": "cd packages/frontend && npm run build",
     "dev": "npm run dev:mcp & npm run dev:frontend",
