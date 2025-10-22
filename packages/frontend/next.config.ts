@@ -14,6 +14,15 @@ const nextConfig: NextConfig = {
     // Optionally ignore type errors as well
     ignoreBuildErrors: true,
   },
+  // Additional config to handle build issues
+  experimental: {
+    esmExternals: true,
+  },
+  // Disable static optimization warnings
+  onDemandEntries: {
+    maxInactiveAge: 25 * 1000,
+    pagesBufferLength: 2,
+  },
 }
 
 export default nextConfig
