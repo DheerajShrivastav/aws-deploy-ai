@@ -90,7 +90,7 @@ export async function POST(request: NextRequest) {
         port: port || 3000,
         customDomain,
         sslEnabled: sslEnabled || false,
-        status: 'pending',
+        status: 'PENDING',
         userId,
       },
       include: {
